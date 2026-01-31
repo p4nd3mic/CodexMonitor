@@ -160,6 +160,8 @@ pub fn run() {
             life::get_finance_dashboard,
             life_stream::life_stream_load_day,
             life_stream::life_stream_submit,
+            life_stream::life_stream_cancel,
+            life_stream::life_stream_retry,
             prompts::prompts_global_dir,
             memory_commands::memory_status,
             memory_commands::memory_search,

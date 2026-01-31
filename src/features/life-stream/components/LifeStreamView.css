@@ -146,6 +146,27 @@
   font-size: 0.85rem;
 }
 
+.life-stream-card__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.life-stream-card__action {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--life-border-subtle);
+  background: var(--life-bg-elevated);
+  color: var(--life-text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.life-stream-card__action.is-primary {
+  background: var(--life-accent);
+  color: #08110c;
+  border-color: transparent;
+}
+
 .life-stream-processing {
   display: inline-flex;
   align-items: center;

@@ -17,10 +17,14 @@ function formatTime(iso: string) {
 
 type CardItemProps = {
   card: StreamCard;
+  onCancel: (cardId: string) => void;
+  onRetry: (cardId: string) => void;
 };
 
-export function CardItem({ card }: CardItemProps) {
+export function CardItem({ card, onCancel, onRetry }: CardItemProps) {
   const timeLabel = useMemo(() => formatTime(card.occurredAt), [card.occurredAt]);
+  const canCancel = card.state === "pending" || card.state === "processing" || card.state === "awaiting_input";
+  const canRetry = card.state === "error";
 
   return (
     <article className={`life-card life-stream-card state-${card.state}`}>
@@ -65,6 +69,29 @@ export function CardItem({ card }: CardItemProps) {
       {card.errorMessage && (
         <div className="life-stream-card__error">
           {card.errorMessage}
+        </div>
+      )}
+
+      {(canCancel || canRetry) && (
+        <div className="life-stream-card__actions">
+          {canCancel && (
+            <button
+              type="button"
+              className="life-stream-card__action"
+              onClick={() => onCancel(card.id)}
+            >
+              Cancel
+            </button>
+          )}
+          {canRetry && (
+            <button
+              type="button"
+              className="life-stream-card__action is-primary"
+              onClick={() => onRetry(card.id)}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 

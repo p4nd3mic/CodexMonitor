@@ -80,18 +80,27 @@ impl ObsidianIO {
         workspace_path: &str,
         obsidian_root: Option<&str>,
     ) -> Result<PathBuf, String> {
+        Ok(self.resolve_root_path(workspace_path, obsidian_root))
+    }
+}
+
+impl ObsidianIO {
+    pub fn resolve_root_path(
+        &self,
+        workspace_path: &str,
+        obsidian_root: Option<&str>,
+    ) -> PathBuf {
         if let Some(root) = obsidian_root {
-            return Ok(PathBuf::from(root));
+            return PathBuf::from(root);
         }
         if let Some(root) = &self.obsidian_root {
-            return Ok(PathBuf::from(root));
+            return PathBuf::from(root);
         }
         let fallback = PathBuf::from(workspace_path);
         if fallback.exists() {
-            return Ok(fallback);
+            return fallback;
         }
-        let default = PathBuf::from("/Volumes/YouTube 4TB/Obsidian");
-        Ok(default)
+        PathBuf::from("/Volumes/YouTube 4TB/Obsidian")
     }
 }
 

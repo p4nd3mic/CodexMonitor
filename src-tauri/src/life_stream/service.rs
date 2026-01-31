@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, Semaphore};
 use tauri::Emitter;
 
+use super::handlers::nutrition::NutritionHandler;
 use super::obsidian::ObsidianIO;
 use super::types::*;
 
@@ -11,6 +12,7 @@ pub struct LifeStreamService {
     cards: Arc<Mutex<HashMap<String, StreamCard>>>,
     worker_semaphore: Arc<Semaphore>,
     write_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    cancelled_cards: Arc<Mutex<HashSet<String>>>,
     obsidian: ObsidianIO,
     emitter: Option<tauri::AppHandle>,
 }
@@ -21,6 +23,7 @@ impl LifeStreamService {
             cards: Arc::new(Mutex::new(HashMap::new())),
             worker_semaphore: Arc::new(Semaphore::new(5)),
             write_locks: Arc::new(Mutex::new(HashMap::new())),
+            cancelled_cards: Arc::new(Mutex::new(HashSet::new())),
             obsidian: ObsidianIO::new(obsidian_root),
             emitter: None,
         }
@@ -53,6 +56,11 @@ impl LifeStreamService {
         let now = chrono::Utc::now().to_rfc3339();
         let occurred = occurred_at.unwrap_or(&now).to_string();
 
+        {
+            let mut cancelled = self.cancelled_cards.lock().await;
+            cancelled.remove(card_id);
+        }
+
         let card = StreamCard {
             id: card_id.to_string(),
             occurred_at: occurred.clone(),
@@ -84,16 +92,134 @@ impl LifeStreamService {
 
         self.emit_event(LifeStreamEvent::CardCreated { card: card.clone() });
 
-        let card_id = card_id.to_string();
-        let workspace_id = workspace_id.to_string();
-        let workspace_path = workspace_path.to_string();
-        let obsidian_root = obsidian_root.map(|value| value.to_string());
-        let input = input.to_string();
+        self.spawn_processing(
+            workspace_id.to_string(),
+            workspace_path.to_string(),
+            obsidian_root.map(|value| value.to_string()),
+            card_id.to_string(),
+            input.to_string(),
+            occurred,
+        );
+
+        Ok(())
+    }
+
+    pub async fn cancel(&self, card_id: &str) -> Result<(), String> {
+        let mut cards_guard = self.cards.lock().await;
+        let card = cards_guard
+            .get_mut(card_id)
+            .ok_or("card not found")?;
+        card.state = CardState::Cancelled;
+        card.processing_step = Some("Cancelled".to_string());
+        card.error_message = None;
+        card.version += 1;
+        let version = card.version;
+        drop(cards_guard);
+
+        let mut cancelled = self.cancelled_cards.lock().await;
+        cancelled.insert(card_id.to_string());
+        drop(cancelled);
+
+        if let Some(app) = &self.emitter {
+            let _ = app.emit(
+                "life_stream_event",
+                LifeStreamEvent::CardUpdated {
+                    card_id: card_id.to_string(),
+                    patch: serde_json::json!({
+                        "state": "cancelled",
+                        "processingStep": "Cancelled",
+                        "errorMessage": null
+                    }),
+                    version,
+                },
+            );
+        }
+
+        Ok(())
+    }
+
+    pub async fn retry(
+        &self,
+        workspace_id: &str,
+        workspace_path: &str,
+        obsidian_root: Option<&str>,
+        card_id: &str,
+    ) -> Result<(), String> {
+        let (input, occurred_at, version) = {
+            let mut cards_guard = self.cards.lock().await;
+            let card = cards_guard
+                .get_mut(card_id)
+                .ok_or("card not found")?;
+            let input = card
+                .original_input
+                .clone()
+                .ok_or("card has no original input")?;
+            let occurred_at = card.occurred_at.clone();
+            card.state = CardState::Processing;
+            card.processing_step = Some("Retrying...".to_string());
+            card.error_message = None;
+            if let Some(ref mut steps) = card.processing_steps {
+                steps.push("Retrying...".to_string());
+            } else {
+                card.processing_steps = Some(vec!["Retrying...".to_string()]);
+            }
+            card.version += 1;
+            (input, occurred_at, card.version)
+        };
+
+        {
+            let mut cancelled = self.cancelled_cards.lock().await;
+            cancelled.remove(card_id);
+        }
+
+        if let Some(app) = &self.emitter {
+            let _ = app.emit(
+                "life_stream_event",
+                LifeStreamEvent::CardUpdated {
+                    card_id: card_id.to_string(),
+                    patch: serde_json::json!({
+                        "state": "processing",
+                        "processingStep": "Retrying...",
+                        "errorMessage": null
+                    }),
+                    version,
+                },
+            );
+        }
+
+        self.spawn_processing(
+            workspace_id.to_string(),
+            workspace_path.to_string(),
+            obsidian_root.map(|value| value.to_string()),
+            card_id.to_string(),
+            input,
+            occurred_at,
+        );
+
+        Ok(())
+    }
+
+    fn emit_event(&self, event: LifeStreamEvent) {
+        if let Some(app) = &self.emitter {
+            let _ = app.emit("life_stream_event", event);
+        }
+    }
+
+    fn spawn_processing(
+        &self,
+        workspace_id: String,
+        workspace_path: String,
+        obsidian_root: Option<String>,
+        card_id: String,
+        input: String,
+        occurred: String,
+    ) {
         let cards = Arc::clone(&self.cards);
         let semaphore = Arc::clone(&self.worker_semaphore);
         let write_locks = Arc::clone(&self.write_locks);
         let obsidian = self.obsidian.clone();
         let emitter = self.emitter.clone();
+        let cancelled_cards = Arc::clone(&self.cancelled_cards);
 
         tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -116,12 +242,16 @@ impl LifeStreamService {
                 &lock,
                 &obsidian,
                 &emitter,
+                &cancelled_cards,
             )
             .await;
 
             if let Err(e) = result {
                 let mut cards_guard = cards.lock().await;
                 if let Some(card) = cards_guard.get_mut(&card_id) {
+                    if card.state == CardState::Cancelled {
+                        return;
+                    }
                     card.state = CardState::Error;
                     card.error_message = Some(e.clone());
                     card.version += 1;
@@ -139,14 +269,6 @@ impl LifeStreamService {
                 }
             }
         });
-
-        Ok(())
-    }
-
-    fn emit_event(&self, event: LifeStreamEvent) {
-        if let Some(app) = &self.emitter {
-            let _ = app.emit("life_stream_event", event);
-        }
     }
 }
 
@@ -160,10 +282,17 @@ async fn process_card(
     write_lock: &Arc<Mutex<()>>,
     obsidian: &ObsidianIO,
     emitter: &Option<tauri::AppHandle>,
+    cancelled_cards: &Arc<Mutex<HashSet<String>>>,
 ) -> Result<(), String> {
+    if is_cancelled(card_id, cancelled_cards).await {
+        return Ok(());
+    }
     emit_step(card_id, "Detecting intent...", cards, emitter).await;
     let (card_type, domain, emoji) = detect_intent(input);
 
+    if is_cancelled(card_id, cancelled_cards).await {
+        return Ok(());
+    }
     emit_step(
         card_id,
         &format!("Processing as {:?}...", domain),
@@ -172,11 +301,21 @@ async fn process_card(
     )
     .await;
 
+    if is_cancelled(card_id, cancelled_cards).await {
+        return Ok(());
+    }
+
     let enriched = match domain {
-        DomainId::Nutrition => handle_nutrition(input, occurred_at).await?,
+        DomainId::Nutrition => {
+            emit_step(card_id, "Looking up nutrition...", cards, emitter).await;
+            handle_nutrition(input, occurred_at, workspace_path, obsidian_root, obsidian).await?
+        }
         _ => handle_generic(input).await?,
     };
 
+    if is_cancelled(card_id, cancelled_cards).await {
+        return Ok(());
+    }
     emit_step(card_id, "Saving...", cards, emitter).await;
     {
         let _guard = write_lock.lock().await;
@@ -193,6 +332,9 @@ async fn process_card(
 
     let mut cards_guard = cards.lock().await;
     if let Some(card) = cards_guard.get_mut(card_id) {
+        if card.state == CardState::Cancelled {
+            return Ok(());
+        }
         card.state = CardState::Complete;
         card.card_type = card_type;
         card.domain = domain;
@@ -287,15 +429,22 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-async fn handle_nutrition(input: &str, occurred_at: &str) -> Result<EnrichedData, String> {
-    let time_label = occurred_at.get(11..16).unwrap_or("??:??");
-    let title = format!("Meal at {}", time_label);
+async fn handle_nutrition(
+    input: &str,
+    occurred_at: &str,
+    workspace_path: &str,
+    obsidian_root: Option<&str>,
+    obsidian: &ObsidianIO,
+) -> Result<EnrichedData, String> {
+    let root = obsidian.resolve_root_path(workspace_path, obsidian_root);
+    let handler = NutritionHandler::new(&root.to_string_lossy());
+    let processed = handler.process(input, occurred_at).await?;
     Ok(EnrichedData {
-        title,
-        subtitle: Some(input.to_string()),
+        title: processed.title,
+        subtitle: processed.subtitle,
         summary: None,
-        stats: None,
-        entities: None,
+        stats: processed.stats,
+        entities: processed.entities,
     })
 }
 
@@ -315,4 +464,12 @@ pub(crate) struct EnrichedData {
     pub(crate) summary: Option<String>,
     pub(crate) stats: Option<HashMap<String, serde_json::Value>>,
     pub(crate) entities: Option<Vec<EntityRef>>,
+}
+
+async fn is_cancelled(
+    card_id: &str,
+    cancelled_cards: &Arc<Mutex<HashSet<String>>>,
+) -> bool {
+    let guard = cancelled_cards.lock().await;
+    guard.contains(card_id)
 }

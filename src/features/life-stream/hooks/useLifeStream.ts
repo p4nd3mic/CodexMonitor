@@ -67,6 +67,43 @@ export function useLifeStream(workspaceId: string | null) {
     }
   }, [workspaceId]);
 
+  const cancel = useCallback(async (cardId: string) => {
+    if (!workspaceId) return;
+    const existing = streamStore.getCard(cardId);
+    if (existing) {
+      streamStore.updateCard(
+        cardId,
+        { state: "cancelled", processingStep: "Cancelled" },
+        existing.version + 1,
+      );
+    }
+    try {
+      await invoke("life_stream_cancel", { workspaceId, cardId });
+    } catch (err) {
+      console.error("Failed to cancel card:", err);
+    }
+  }, [workspaceId]);
+
+  const retry = useCallback(async (cardId: string) => {
+    if (!workspaceId) return;
+    const existing = streamStore.getCard(cardId);
+    if (existing) {
+      streamStore.updateCard(
+        cardId,
+        { state: "processing", processingStep: "Retrying...", errorMessage: undefined },
+        existing.version + 1,
+      );
+    }
+    try {
+      await invoke("life_stream_retry", { workspaceId, cardId });
+    } catch (err) {
+      console.error("Failed to retry card:", err);
+      if (existing) {
+        streamStore.setCardError(cardId, String(err), existing.version + 2);
+      }
+    }
+  }, [workspaceId]);
+
   // Navigate to previous/next day
   const goToPreviousDay = useCallback(() => {
     const date = new Date(currentDate);
@@ -108,6 +145,8 @@ export function useLifeStream(workspaceId: string | null) {
     cards,
     currentDate,
     submit,
+    cancel,
+    retry,
     loadDay,
     goToPreviousDay,
     goToNextDay,

@@ -16,6 +16,8 @@ export function LifeStreamView({ workspaceId }: LifeStreamViewProps) {
     cards,
     currentDate,
     submit,
+    cancel,
+    retry,
     goToPreviousDay,
     goToNextDay,
     goToToday,
@@ -76,7 +78,7 @@ export function LifeStreamView({ workspaceId }: LifeStreamViewProps) {
         onClear={clearFilters}
       />
 
-      <CardList cards={filteredCards} />
+      <CardList cards={filteredCards} onCancel={cancel} onRetry={retry} />
 
       <StreamComposer onSubmit={handleSubmit} />
     </div>
