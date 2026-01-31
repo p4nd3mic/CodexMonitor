@@ -9,7 +9,9 @@ export function useLifeWorkspace(workspaceId: string | null) {
     if (!workspaceId) {
       setActiveDomain(null);
       setTimeRange("today");
+      return;
     }
+    setActiveDomain("stream");
   }, [workspaceId]);
 
   return {

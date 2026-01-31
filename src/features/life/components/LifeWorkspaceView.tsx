@@ -6,6 +6,7 @@ import { FinanceDashboard } from "./domains/FinanceDashboard";
 import { MediaDashboard } from "./domains/MediaDashboard";
 import { NutritionDashboard } from "./domains/NutritionDashboard";
 import { YouTubeDashboard } from "./domains/YouTubeDashboard";
+import { LifeStreamView } from "../../life-stream/components/LifeStreamView";
 
 type LifeWorkspaceViewProps = {
   workspaceId: string | null;
@@ -41,6 +42,8 @@ export function LifeWorkspaceView({
           range={timeRange}
           onRangeChange={onTimeRangeChange}
         />
+      ) : activeDomain === "stream" ? (
+        <LifeStreamView workspaceId={workspaceId} />
       ) : activeDomain === "nutrition" ? (
         <NutritionDashboard
           workspaceId={workspaceId}

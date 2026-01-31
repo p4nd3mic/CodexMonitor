@@ -1,4 +1,5 @@
 export type LifeDomain =
+  | "stream"
   | "delivery"
   | "nutrition"
   | "exercise"
@@ -18,6 +19,7 @@ export interface LifeDomainConfig {
 }
 
 export const LIFE_DOMAINS: LifeDomainConfig[] = [
+  { id: "stream", label: "Stream", icon: "🧠", accentColor: "#10b981" },
   { id: "delivery", label: "Delivery", icon: "🚗", accentColor: "#3b82f6" },
   { id: "nutrition", label: "Nutrition", icon: "🍽️", accentColor: "#22c55e" },
   { id: "exercise", label: "Exercise", icon: "🏋️", accentColor: "#22c55e" },

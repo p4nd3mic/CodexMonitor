@@ -1,0 +1,219 @@
+.life-stream-dashboard {
+  --life-accent: #10b981;
+  --life-accent-soft: rgba(16, 185, 129, 0.2);
+}
+
+.life-stream-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.life-stream-empty {
+  padding: 24px;
+  color: var(--life-text-secondary);
+}
+
+.life-stream-day-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.life-stream-day-picker__label {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.life-stream-day-picker__controls {
+  flex-wrap: wrap;
+}
+
+.life-stream-filters__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.life-stream-filters__clear {
+  background: transparent;
+  color: var(--life-text-secondary);
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.life-stream-filters__controls {
+  flex-wrap: wrap;
+}
+
+.life-stream-filters__emoji {
+  margin-right: 6px;
+}
+
+.life-stream-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.life-stream-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.life-stream-card__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.life-stream-card__emoji {
+  font-size: 1.5rem;
+}
+
+.life-stream-card__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.life-stream-card__title {
+  font-weight: 600;
+}
+
+.life-stream-card__subtitle {
+  color: var(--life-text-secondary);
+  font-size: 0.9rem;
+}
+
+.life-stream-card__time {
+  color: var(--life-text-muted);
+  font-size: 0.85rem;
+}
+
+.life-stream-card__summary {
+  color: var(--life-text-secondary);
+}
+
+.life-stream-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.life-stream-card__stat {
+  background: var(--life-bg-elevated);
+  border-radius: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--life-border-subtle);
+  font-size: 0.8rem;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.life-stream-card__stat-label {
+  color: var(--life-text-muted);
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+}
+
+.life-stream-card__stat-value {
+  color: var(--life-text-primary);
+}
+
+.life-stream-card__entities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.life-stream-card__entity {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--life-bg-elevated);
+  border: 1px solid var(--life-border-subtle);
+  font-size: 0.75rem;
+  color: var(--life-text-secondary);
+}
+
+.life-stream-card__error {
+  color: var(--life-color-negative);
+  font-size: 0.85rem;
+}
+
+.life-stream-processing {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--life-text-secondary);
+  font-size: 0.85rem;
+}
+
+.life-stream-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--life-text-primary);
+  animation: life-stream-spin 1s linear infinite;
+}
+
+@keyframes life-stream-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.life-stream-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.life-stream-composer__form {
+  display: flex;
+  gap: 12px;
+}
+
+.life-stream-composer__input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--life-border-subtle);
+  background: var(--life-bg-elevated);
+  color: var(--life-text-primary);
+}
+
+.life-stream-composer__submit {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--life-accent);
+  color: #08110c;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .life-stream-day-picker {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .life-stream-composer__form {
+    flex-direction: column;
+  }
+
+  .life-stream-composer__submit {
+    width: 100%;
+  }
+}
