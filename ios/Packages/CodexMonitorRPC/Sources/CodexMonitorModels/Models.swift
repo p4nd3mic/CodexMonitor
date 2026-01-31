@@ -304,6 +304,7 @@ public struct DeliveryOrder: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var startedAt: String
     public var merchantName: String
+    public var logoUrl: String?
     public var payout: Double
     public var miles: Double?
     public var durationMinutes: Double?
@@ -315,6 +316,7 @@ public struct DeliveryOrder: Codable, Hashable, Sendable, Identifiable {
 
 public struct MerchantStats: Codable, Hashable, Sendable {
     public var merchantName: String
+    public var logoUrl: String?
     public var orderCount: Int
     public var totalEarnings: Double
     public var avgPayout: Double
@@ -345,6 +347,11 @@ public struct MealEntry: Codable, Hashable, Sendable, Identifiable {
     public var mealType: String
     public var description: String
     public var foods: [String]
+    public var imageUrl: String?
+    public var protein: Double?
+    public var carbs: Double?
+    public var fat: Double?
+    public var fiber: Double?
     public var estimatedCalories: Double?
 }
 
@@ -381,6 +388,7 @@ public struct ExerciseDashboard: Codable, Hashable, Sendable {
 public struct Bill: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var name: String
+    public var logoUrl: String?
     public var amount: Double
     public var dueDay: Int
     public var frequency: String
@@ -448,6 +456,31 @@ public struct MediaLibrary: Codable, Hashable, Sendable {
     public var backlogCount: Int
     public var avgRating: Double
     public var items: [MediaItem]
+}
+
+public struct MediaCoverSummary: Codable, Hashable, Sendable {
+    public var total: Int
+    public var found: Int
+    public var skipped: Int
+    public var failed: Int
+}
+
+public struct FixCoversResult: Codable, Hashable, Sendable {
+    public var fixed: Int
+    public var alreadyValid: Int
+    public var failed: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case fixed
+        case alreadyValid = "already_valid"
+        case failed
+    }
+}
+
+public struct CoverRebuildResult: Codable, Hashable, Sendable {
+    public var total: Int
+    public var rebuilt: Int
+    public var failed: [String]
 }
 
 public enum YouTubeTier: String, Codable, CaseIterable, Sendable {

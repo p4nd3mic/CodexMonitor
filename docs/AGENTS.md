@@ -31,6 +31,7 @@ CodexMonitor uses a **simplified two-workspace architecture**:
 1. **Chat Mode (default)**: Full life context (4 prompts combined) injected into every thread
 2. **Dashboard Mode**: Clicking domain tab replaces center panel with rendered dashboard
 3. **Domain prompts**: `workspace-delivery-finance.md`, `workspace-food-exercise.md`, `workspace-media.md`, `workspace-youtube.md`
+4. **Poster selection rules**: TMDB `/images` posters are selected by language rules (anime prefers English except Cowboy Bebop; foreign films prefer origin-country language). If ambiguous, prompt the user before choosing.
 
 ### Data Flow
 
@@ -92,6 +93,9 @@ Obsidian (raw) → Daemon parses → Dashboard data
 | **File editor hook** | `src/features/shared/hooks/useFileEditor.ts` |
 | **Workspace home** | `src/features/workspaces/components/WorkspaceHome.tsx` |
 | **Cover overrides** | `Obsidian/Indexes/media.covers.overrides.json` |
+| **Merchant logos** | `Obsidian/Indexes/merchant.logos.json` |
+| **Food images** | `Obsidian/Indexes/food.images.json` |
+| **Company logos** | `Obsidian/Indexes/company.logos.json` |
 
 ## RPC Quick Reference (daemon)
 

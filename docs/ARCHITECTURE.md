@@ -176,7 +176,7 @@ TCP JSON-RPC + token auth" .-> RPCServer
 | Today's entries | Obsidian Stream | Fast, local, real-time |
 | Week/month/lifetime aggregations | Supabase | Pre-computed, performant |
 | Entity details | Obsidian Entities folder | Source of truth |
-| Images/covers | External APIs (TMDB, IGDB) or stored URLs | Visual richness |
+| Images/covers | External APIs (TMDB /images language selection, IGDB) or stored URLs | Visual richness |
 
 ### Obsidian Vault Structure
 
@@ -195,6 +195,11 @@ TCP JSON-RPC + token auth" .-> RPCServer
 │   └── Behaviors/              ← Exercise behaviors
 ├── Domains/                    ← Dashboard markdown pages
 ├── Indexes/                    ← JSON aggregation files
+│   ├── media.covers.v1.json           ← Auto-fetched media covers
+│   ├── media.covers.overrides.json    ← Manual cover overrides
+│   ├── merchant.logos.json            ← Merchant logos (Delivery cards)
+│   ├── food.images.json               ← Meal photos (Nutrition cards)
+│   └── company.logos.json             ← Bill/company logos (Finance cards)
 └── _config/                    ← YAML configs
 ```
 

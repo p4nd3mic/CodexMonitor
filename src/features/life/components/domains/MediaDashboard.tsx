@@ -1,9 +1,13 @@
-import { useMemo } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import type { MediaFilterState, MediaItem, MediaType } from "../../types";
 import { useMediaLibrary } from "../../hooks/useMediaLibrary";
-import { enrichMediaCovers } from "../../../../services/tauri";
+import {
+  rebuildMediaCovers,
+  refetchMediaCover,
+} from "../../../../services/tauri";
 import { MediaFilterBar } from "./MediaFilterBar";
 import { MediaSection } from "./MediaSection";
+import { MediaDetailPanel } from "./MediaDetailPanel";
 
 const MEDIA_TYPES: MediaType[] = [
   "Anime",
@@ -27,9 +31,90 @@ type MediaDashboardProps = {
   workspaceId: string | null;
 };
 
+const AUTO_REBUILD_WORKSPACES = new Set<string>();
+
 export function MediaDashboard({ workspaceId }: MediaDashboardProps) {
   const { library, summary, filters, updateFilters, loading, error, refresh } =
     useMediaLibrary(workspaceId);
+  const [refetchingIds, setRefetchingIds] = useState<Set<string>>(new Set());
+  const [rebuildingCovers, setRebuildingCovers] = useState(false);
+  const [rebuildToast, setRebuildToast] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
+  const [coverEpoch, setCoverEpoch] = useState(0);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleViewDetails = useCallback((item: MediaItem) => {
+    setSelectedItem(item);
+  }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setSelectedItem(null);
+  }, []);
+
+  const handleRefetchCover = useCallback(
+    async (mediaId: string) => {
+      if (!workspaceId) return;
+      setRefetchingIds((prev) => new Set(prev).add(mediaId));
+      try {
+        await refetchMediaCover(workspaceId, mediaId);
+        await refresh();
+      } catch (err) {
+        console.error("Failed to refetch cover:", err);
+      } finally {
+        setRefetchingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(mediaId);
+          return next;
+        });
+      }
+    },
+    [workspaceId, refresh],
+  );
+
+  const handleRebuildCovers = useCallback(async () => {
+    if (!workspaceId) return;
+    setRebuildingCovers(true);
+    try {
+      const result = await rebuildMediaCovers(workspaceId);
+      const failedCount = result.failed.length;
+      const message = `Rebuilt ${result.rebuilt} covers, ${failedCount} failed`;
+      setRebuildToast(message);
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      toastTimeoutRef.current = setTimeout(() => {
+        setRebuildToast(null);
+      }, 4000);
+      await refresh();
+      setCoverEpoch((prev) => prev + 1);
+    } catch (err) {
+      console.error("Failed to rebuild covers:", err);
+      setRebuildToast("Cover rebuild failed.");
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      toastTimeoutRef.current = setTimeout(() => {
+        setRebuildToast(null);
+      }, 4000);
+    } finally {
+      setRebuildingCovers(false);
+    }
+  }, [workspaceId, refresh]);
+
+  useEffect(() => {
+    if (!workspaceId || !library) return;
+    if (AUTO_REBUILD_WORKSPACES.has(workspaceId)) return;
+    AUTO_REBUILD_WORKSPACES.add(workspaceId);
+    void handleRebuildCovers();
+  }, [workspaceId, library, handleRebuildCovers]);
 
   const filteredItems = useMemo(() => {
     if (!library) return [];
@@ -69,22 +154,6 @@ export function MediaDashboard({ workspaceId }: MediaDashboardProps) {
           <button
             type="button"
             className="ghost life-refresh-button"
-            onClick={() => void handleEnrich(true)}
-            disabled={loading}
-          >
-            Fetch Covers
-          </button>
-          <button
-            type="button"
-            className="ghost life-refresh-button"
-            onClick={() => void handleEnrich(false)}
-            disabled={loading}
-          >
-            Retry Missing
-          </button>
-          <button
-            type="button"
-            className="ghost life-refresh-button"
             onClick={() => void refresh()}
             disabled={loading}
           >
@@ -94,6 +163,13 @@ export function MediaDashboard({ workspaceId }: MediaDashboardProps) {
       </div>
 
       <MediaFilterBar filters={filters} onChange={updateFilters} />
+
+      {rebuildingCovers && (
+        <div className="life-dashboard-status">
+          <span className="media-card__refetching-spinner">↻</span> Rebuilding covers…
+        </div>
+      )}
+      {rebuildToast && <div className="life-dashboard-status">{rebuildToast}</div>}
 
       {error && <div className="life-dashboard-error">{error}</div>}
       {loading && !library && (
@@ -112,23 +188,22 @@ export function MediaDashboard({ workspaceId }: MediaDashboardProps) {
                 count={items.length}
                 items={items}
                 viewMode={filters.viewMode}
+                onRefetchCover={handleRefetchCover}
+                refetchingIds={refetchingIds}
+                onViewDetails={handleViewDetails}
+                coverEpoch={coverEpoch}
               />
             );
           })}
         </div>
       ) : null}
+
+      {selectedItem && (
+        <MediaDetailPanel item={selectedItem} onClose={handleCloseDetails} />
+      )}
     </div>
   );
 
-  async function handleEnrich(force: boolean) {
-    if (!workspaceId) return;
-    try {
-      await enrichMediaCovers(workspaceId, force);
-      await refresh();
-    } catch (err) {
-      console.error(err);
-    }
-  }
 }
 
 function applyFilters(items: MediaItem[], filters: MediaFilterState) {

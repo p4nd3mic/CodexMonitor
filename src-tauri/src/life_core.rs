@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::Duration as StdDuration;
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, TimeZone, Utc};
 use reqwest::{Client, Url};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use tokio::time::sleep;
 
 use crate::types::{WorkspacePurpose, WorkspaceSettings};
 
@@ -62,6 +65,8 @@ pub(crate) struct DeliveryOrder {
     pub(crate) started_at: String,
     #[serde(rename = "merchantName")]
     pub(crate) merchant_name: String,
+    #[serde(rename = "logoUrl", skip_serializing_if = "Option::is_none")]
+    pub(crate) logo_url: Option<String>,
     pub(crate) payout: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) miles: Option<f64>,
@@ -81,6 +86,8 @@ pub(crate) struct DeliveryOrder {
 pub(crate) struct MerchantStats {
     #[serde(rename = "merchantName")]
     pub(crate) merchant_name: String,
+    #[serde(rename = "logoUrl", skip_serializing_if = "Option::is_none")]
+    pub(crate) logo_url: Option<String>,
     #[serde(rename = "orderCount")]
     pub(crate) order_count: u32,
     #[serde(rename = "totalEarnings")]
@@ -124,6 +131,16 @@ pub(crate) struct MealEntry {
     pub(crate) meal_type: String,
     pub(crate) description: String,
     pub(crate) foods: Vec<String>,
+    #[serde(rename = "imageUrl", skip_serializing_if = "Option::is_none")]
+    pub(crate) image_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) protein: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) carbs: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fat: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fiber: Option<f64>,
     #[serde(rename = "estimatedCalories", skip_serializing_if = "Option::is_none")]
     pub(crate) estimated_calories: Option<f64>,
 }
@@ -175,6 +192,8 @@ pub(crate) struct ExerciseDashboard {
 pub(crate) struct Bill {
     pub(crate) id: String,
     pub(crate) name: String,
+    #[serde(rename = "logoUrl", skip_serializing_if = "Option::is_none")]
+    pub(crate) logo_url: Option<String>,
     pub(crate) amount: f64,
     #[serde(rename = "dueDay")]
     pub(crate) due_day: u32,
@@ -224,6 +243,10 @@ pub(crate) struct MediaItem {
     pub(crate) updated_at: String,
     #[serde(rename = "completedAt", skip_serializing_if = "Option::is_none")]
     pub(crate) completed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) year: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) notes: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -275,10 +298,45 @@ pub struct MediaCoverSummary {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CoverRebuildResult {
+    pub total: u32,
+    pub rebuilt: u32,
+    pub failed: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FixCoversResult {
+    pub fixed: u32,
+    pub already_valid: u32,
+    pub failed: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct MediaCoverEntry {
     #[serde(rename = "coverUrl")]
     cover_url: String,
     source: String,
+    #[serde(rename = "fetchedAt")]
+    fetched_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct MediaCoverEntryV2 {
+    #[serde(rename = "coverUrl")]
+    cover_url: String,
+    source: String,
+    #[serde(rename = "sourceId", skip_serializing_if = "Option::is_none")]
+    source_id: Option<String>,
+    #[serde(rename = "matchedTitle", skip_serializing_if = "Option::is_none")]
+    matched_title: Option<String>,
+    #[serde(rename = "matchedYear", skip_serializing_if = "Option::is_none")]
+    matched_year: Option<i32>,
+    #[serde(rename = "matchConfidence", skip_serializing_if = "Option::is_none")]
+    match_confidence: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
+    #[serde(rename = "posterType", skip_serializing_if = "Option::is_none")]
+    poster_type: Option<String>,
     #[serde(rename = "fetchedAt")]
     fetched_at: String,
 }
@@ -301,6 +359,26 @@ struct MediaCoverOverrideItem {
     cover_url: String,
     #[serde(default)]
     source: Option<String>,
+    #[serde(rename = "updatedAt", default)]
+    updated_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct MediaCoverAiFixed {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    year: Option<i32>,
+    #[serde(rename = "tmdbId", default)]
+    tmdb_id: Option<i64>,
+    #[serde(rename = "tmdbType", default)]
+    tmdb_type: Option<String>,
+    #[serde(rename = "coverUrl")]
+    cover_url: String,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
     #[serde(rename = "updatedAt", default)]
     updated_at: Option<String>,
 }
@@ -443,6 +521,7 @@ struct MediaFrontmatter {
     created_at: Option<String>,
     completed_at: Option<String>,
     updated_at: Option<String>,
+    #[serde(rename = "image")]
     cover_url: Option<String>,
     url: Option<String>,
     youtube_id: Option<String>,
@@ -472,9 +551,22 @@ struct TmdbResult {
     original_title: Option<String>,
     original_name: Option<String>,
     original_language: Option<String>,
+    origin_country: Option<Vec<String>>,
+    production_countries: Option<Vec<TmdbCountry>>,
+    genre_ids: Option<Vec<i64>>,
     release_date: Option<String>,
     first_air_date: Option<String>,
     poster_path: Option<String>,
+    /// TMDB popularity score - higher means more popular/well-known
+    popularity: Option<f64>,
+    /// Number of user votes - higher means more widely seen
+    vote_count: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TmdbCountry {
+    #[serde(rename = "iso_3166_1")]
+    iso_3166_1: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -488,6 +580,11 @@ struct TmdbImage {
     vote_count: Option<i64>,
     vote_average: Option<f64>,
     iso_639_1: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TmdbSeasonResult {
+    poster_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -507,6 +604,7 @@ struct IgdbTokenResponse {
 
 #[derive(Debug, Deserialize)]
 struct IgdbGameResult {
+    id: Option<i64>,
     name: Option<String>,
     #[serde(rename = "first_release_date")]
     first_release_date: Option<i64>,
@@ -516,6 +614,18 @@ struct IgdbGameResult {
 #[derive(Debug, Deserialize)]
 struct IgdbCover {
     image_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct CoverMeta {
+    cover_url: String,
+    source: String,
+    source_id: Option<String>,
+    matched_title: Option<String>,
+    matched_year: Option<i32>,
+    match_confidence: Option<f64>,
+    language: Option<String>,
+    poster_type: Option<String>,
 }
 
 pub(crate) fn is_life_workspace(settings: &WorkspaceSettings) -> bool {
@@ -720,7 +830,15 @@ pub(crate) async fn build_delivery_dashboard(
     };
 
     let merchant_tiers = load_delivery_merchant_tiers(&root);
-    let top_merchants = build_top_merchants(&orders, &merchant_tiers);
+    let merchant_logos = load_merchant_logos(&root);
+
+    for order in &mut orders {
+        if let Some(logo_url) = merchant_logos.get(&normalize_lookup_key(&order.merchant_name)) {
+            order.logo_url = Some(logo_url.clone());
+        }
+    }
+
+    let top_merchants = build_top_merchants(&orders, &merchant_tiers, &merchant_logos);
 
     let period_start = start_date
         .or_else(|| filtered.iter().map(|s| s.date).min())
@@ -771,6 +889,7 @@ pub(crate) async fn build_nutrition_dashboard(
     };
 
     let food_map = load_food_library(&root);
+    let food_images = load_food_images(&root);
     let meals = load_meal_entries(&root, start_date, end_date, &food_map);
 
     let mut stats = NutritionStats::default();
@@ -815,13 +934,33 @@ pub(crate) async fn build_nutrition_dashboard(
     let meals = meals
         .into_iter()
         .enumerate()
-        .map(|(index, meal)| MealEntry {
-            id: format!("meal-{}-{}", meal.date, index + 1),
-            timestamp: meal.timestamp,
-            meal_type: meal.meal_type,
-            description: meal.description,
-            foods: meal.foods,
-            estimated_calories: meal.estimated_calories,
+        .map(|(index, meal)| {
+            let image_url = select_food_image(&meal, &food_images);
+            MealEntry {
+                id: format!("meal-{}-{}", meal.date, index + 1),
+                timestamp: meal.timestamp,
+                meal_type: meal.meal_type,
+                description: meal.description,
+                foods: meal.foods,
+                image_url,
+                protein: if meal.protein > 0.0 {
+                    Some(meal.protein)
+                } else {
+                    None
+                },
+                carbs: if meal.carbs > 0.0 {
+                    Some(meal.carbs)
+                } else {
+                    None
+                },
+                fat: if meal.fat > 0.0 { Some(meal.fat) } else { None },
+                fiber: if meal.fiber > 0.0 {
+                    Some(meal.fiber)
+                } else {
+                    None
+                },
+                estimated_calories: meal.estimated_calories,
+            }
         })
         .collect();
 
@@ -940,6 +1079,7 @@ pub(crate) async fn build_finance_dashboard(
     };
     let bills_dir = root.join("Entities").join("Finance").join("Bills");
     let bill_records = load_bill_records(&bills_dir, today);
+    let company_logos = load_company_logos(&root);
 
     let earliest_due = bill_records.iter().map(|record| record.due_date).min();
     let latest_due = bill_records.iter().map(|record| record.due_date).max();
@@ -984,7 +1124,11 @@ pub(crate) async fn build_finance_dashboard(
         if record.due_date >= today && record.due_date <= today + Duration::days(7) {
             stats.due_soon_count += 1;
         }
-        bills.push(record.bill.clone());
+        let mut bill = record.bill.clone();
+        if let Some(logo_url) = company_logos.get(&normalize_lookup_key(&bill.name)) {
+            bill.logo_url = Some(logo_url.clone());
+        }
+        bills.push(bill);
     }
 
     bills.sort_by_key(|bill| bill.next_due_date.clone());
@@ -1019,8 +1163,7 @@ pub(crate) async fn build_media_library(
     }
 
     let mut records = load_media_items(&root);
-    let overrides = load_media_cover_overrides(&root);
-    let cache = load_media_cover_cache(&root);
+    let cache = load_media_cover_cache_v2(&root);
     let total_count = records.len() as u32;
     let mut completed_count = 0u32;
     let mut backlog_count = 0u32;
@@ -1030,12 +1173,9 @@ pub(crate) async fn build_media_library(
     let mut latest: Option<DateTime<Utc>> = None;
 
     for record in &mut records {
-        if let Some(entry) = overrides.get(&record.item.id) {
+        record.item.cover_url = None;
+        if let Some(entry) = cache.get(&record.item.id) {
             record.item.cover_url = Some(entry.cover_url.clone());
-        } else if record.item.cover_url.is_none() {
-            if let Some(entry) = cache.get(&record.item.id) {
-                record.item.cover_url = Some(entry.cover_url.clone());
-            }
         }
         match record.item.status.as_str() {
             "Completed" => completed_count += 1,
@@ -1185,6 +1325,7 @@ pub async fn enrich_media_covers(
     let records = load_media_items(&root);
     let total = records.len() as u32;
     let overrides = load_media_cover_overrides(&root);
+    let ai_fixed = load_media_cover_ai_fixed(&root);
     let mut cache = load_media_cover_cache(&root);
     let mut found = 0u32;
     let mut skipped = 0u32;
@@ -1205,7 +1346,8 @@ pub async fn enrich_media_covers(
     };
 
     for record in records {
-        if overrides.contains_key(&record.item.id) {
+        // Skip if manual override or AI-fixed cover exists
+        if overrides.contains_key(&record.item.id) || ai_fixed.contains_key(&record.item.id) {
             skipped += 1;
             continue;
         }
@@ -1224,6 +1366,7 @@ pub async fn enrich_media_covers(
                     &record.item.title,
                     &title_variants,
                     "movie",
+                    &record.item.media_type,
                     tmdb_api_key,
                     record.year_hint,
                     exa_api_key,
@@ -1235,6 +1378,7 @@ pub async fn enrich_media_covers(
                     &record.item.title,
                     &title_variants,
                     "tv",
+                    &record.item.media_type,
                     tmdb_api_key,
                     record.year_hint,
                     exa_api_key,
@@ -1248,6 +1392,7 @@ pub async fn enrich_media_covers(
                         &record.item.title,
                         &title_variants,
                         "movie",
+                        &record.item.media_type,
                         tmdb_api_key,
                         record.year_hint,
                         exa_api_key,
@@ -1258,6 +1403,7 @@ pub async fn enrich_media_covers(
                         &record.item.title,
                         &title_variants,
                         "tv",
+                        &record.item.media_type,
                         tmdb_api_key,
                         record.year_hint,
                         exa_api_key,
@@ -1268,6 +1414,7 @@ pub async fn enrich_media_covers(
                             &record.item.title,
                             &title_variants,
                             "movie",
+                            &record.item.media_type,
                             tmdb_api_key,
                             record.year_hint,
                             exa_api_key,
@@ -1322,6 +1469,559 @@ pub async fn enrich_media_covers(
         skipped,
         failed,
     })
+}
+
+pub async fn rebuild_media_covers(
+    workspace_path: &str,
+    obsidian_root: Option<&str>,
+    tmdb_api_key: Option<&str>,
+    igdb_client_id: Option<&str>,
+    igdb_client_secret: Option<&str>,
+    exa_api_key: Option<&str>,
+) -> Result<CoverRebuildResult, String> {
+    let root = resolve_obsidian_root(workspace_path, obsidian_root);
+    if !root.exists() {
+        return Err(format!(
+            "Obsidian root not found: {}",
+            root.to_string_lossy()
+        ));
+    }
+
+    // Purge legacy caches
+    let _ = std::fs::remove_file(media_cover_cache_path(&root));
+    let _ = std::fs::remove_file(media_cover_ai_fixed_path(&root));
+    let _ = std::fs::remove_file(media_cover_broken_path(&root));
+    // Keep v2 cache in place until we finish rebuilding, so UI doesn't blank out.
+
+    let records = load_media_items(&root);
+    let total = records.len() as u32;
+    let mut cache: HashMap<String, MediaCoverEntryV2> = HashMap::new();
+    let mut failed: Vec<String> = Vec::new();
+
+    let igdb_token = if records
+        .iter()
+        .any(|record| record.item.media_type == "Game")
+    {
+        match (igdb_client_id, igdb_client_secret) {
+            (Some(id), Some(secret)) if !id.is_empty() && !secret.is_empty() => {
+                fetch_igdb_token(id, secret).await?
+            }
+            _ => String::new(),
+        }
+    } else {
+        String::new()
+    };
+
+    for record in records {
+        let guessed_year =
+            guess_year_for_media(&record.item.media_type, record.year_hint, &record.item.title);
+        let title_variants = title_variants(&record.item.title);
+        let movie_hint = has_movie_hint(&record.item.title);
+        let season_hint = has_season_hint(&record.item.title);
+
+        let maybe_cover = match record.item.media_type.as_str() {
+            "Film" => {
+                fetch_tmdb_official_cover(
+                    &record.item.title,
+                    &title_variants,
+                    "movie",
+                    tmdb_api_key,
+                    guessed_year,
+                    exa_api_key,
+                    false,
+                    false,
+                    false,
+                    None,
+                )
+                .await?
+            }
+            "TV" => {
+                fetch_tmdb_official_cover(
+                    &record.item.title,
+                    &title_variants,
+                    "tv",
+                    tmdb_api_key,
+                    guessed_year,
+                    exa_api_key,
+                    false,
+                    false,
+                    false,
+                    parse_season_number(&record.item.title),
+                )
+                .await?
+            }
+            "Anime" => {
+                let mut cover = None;
+                if movie_hint {
+                    cover = fetch_tmdb_official_cover(
+                        &record.item.title,
+                        &title_variants,
+                        "movie",
+                        tmdb_api_key,
+                        guessed_year,
+                        exa_api_key,
+                        true,
+                        true,
+                        false,
+                        None,
+                    )
+                    .await?;
+                } else {
+                    cover = fetch_tmdb_official_cover(
+                        &record.item.title,
+                        &title_variants,
+                        "tv",
+                        tmdb_api_key,
+                        guessed_year,
+                        exa_api_key,
+                        true,
+                        true,
+                        false,
+                        parse_season_number(&record.item.title),
+                    )
+                    .await?;
+                    if cover.is_none() && !season_hint {
+                        cover = fetch_tmdb_official_cover(
+                            &record.item.title,
+                            &title_variants,
+                            "movie",
+                            tmdb_api_key,
+                            guessed_year,
+                            exa_api_key,
+                            true,
+                            true,
+                            false,
+                            None,
+                        )
+                        .await?;
+                    }
+                }
+                cover
+            }
+            "Book" => fetch_open_library_official_cover(&record.item.title).await?,
+            "Game" => {
+                fetch_igdb_official_cover(
+                    &record.item.title,
+                    guessed_year,
+                    igdb_client_id,
+                    &igdb_token,
+                )
+                .await?
+            }
+            "YouTube" => fetch_youtube_official_thumbnail(record.youtube_id.as_deref(), record.url.as_deref()).await?,
+            _ => None,
+        };
+
+        if let Some(meta) = maybe_cover {
+            cache.insert(
+                record.item.id.clone(),
+                MediaCoverEntryV2 {
+                    cover_url: meta.cover_url,
+                    source: meta.source,
+                    source_id: meta.source_id,
+                    matched_title: meta.matched_title,
+                    matched_year: meta.matched_year,
+                    match_confidence: meta.match_confidence,
+                    language: meta.language,
+                    poster_type: meta.poster_type,
+                    fetched_at: Utc::now().to_rfc3339(),
+                },
+            );
+        } else {
+            failed.push(record.item.title.clone());
+        }
+    }
+
+    write_media_cover_cache_v2(&root, &cache)?;
+
+    Ok(CoverRebuildResult {
+        total,
+        rebuilt: cache.len() as u32,
+        failed,
+    })
+}
+
+pub async fn fix_broken_covers(
+    workspace_path: &str,
+    obsidian_root: Option<&str>,
+    tmdb_api_key: Option<&str>,
+    igdb_client_id: Option<&str>,
+    igdb_client_secret: Option<&str>,
+    exa_api_key: Option<&str>,
+) -> Result<FixCoversResult, String> {
+    let root = resolve_obsidian_root(workspace_path, obsidian_root);
+    if !root.exists() {
+        return Err(format!(
+            "Obsidian root not found: {}",
+            root.to_string_lossy()
+        ));
+    }
+
+    let records = load_media_items(&root);
+    let overrides = load_media_cover_overrides(&root);
+    let ai_fixed = load_media_cover_ai_fixed(&root);
+    let mut cache = load_media_cover_cache(&root);
+    let mut broken_sources = load_media_cover_broken(&root);
+    let client = Client::builder()
+        .timeout(StdDuration::from_secs(5))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let mut needs_fetch: Vec<MediaRecord> = Vec::new();
+    let mut already_valid = 0u32;
+    let mut failed: Vec<String> = Vec::new();
+
+    for record in records {
+        let mut cover_url = None;
+        let mut cover_source = "none";
+        if let Some(entry) = overrides.get(&record.item.id) {
+            cover_url = Some(entry.cover_url.clone());
+            cover_source = "override";
+        } else if let Some(entry) = ai_fixed.get(&record.item.id) {
+            cover_url = Some(entry.cover_url.clone());
+            cover_source = "ai_fixed";
+        } else if let Some(url) = record.item.cover_url.clone() {
+            cover_url = Some(url);
+            cover_source = "frontmatter";
+        } else if let Some(entry) = cache.get(&record.item.id) {
+            cover_url = Some(entry.cover_url.clone());
+            cover_source = "cache";
+        }
+
+        let Some(cover_url) = cover_url.filter(|url| !url.trim().is_empty()) else {
+            broken_sources.remove(&record.item.id);
+            needs_fetch.push(record);
+            continue;
+        };
+
+        let is_valid = match client.head(&cover_url).send().await {
+            Ok(resp) if resp.status().is_success() => true,
+            _ => false,
+        };
+        if is_valid {
+            already_valid += 1;
+            broken_sources.remove(&record.item.id);
+        } else if cover_source == "cache" {
+            cache.remove(&record.item.id);
+            broken_sources.remove(&record.item.id);
+            needs_fetch.push(record);
+        } else {
+            broken_sources.insert(record.item.id.clone(), cover_source.to_string());
+            needs_fetch.push(record);
+        }
+    }
+
+    let mut fixed = 0u32;
+
+    let igdb_token = if needs_fetch
+        .iter()
+        .any(|record| record.item.media_type == "Game")
+    {
+        match (igdb_client_id, igdb_client_secret) {
+            (Some(id), Some(secret)) if !id.is_empty() && !secret.is_empty() => {
+                fetch_igdb_token(id, secret).await?
+            }
+            _ => String::new(),
+        }
+    } else {
+        String::new()
+    };
+
+    let chunk_count = (needs_fetch.len() + 49) / 50;
+    for (chunk_index, chunk) in needs_fetch.chunks(50).enumerate() {
+        for record in chunk {
+            let title_variants = title_variants(&record.item.title);
+            let movie_hint = has_movie_hint(&record.item.title);
+            let season_hint = has_season_hint(&record.item.title);
+
+            let maybe_cover = match record.item.media_type.as_str() {
+                "Film" => {
+                    let cover = fetch_tmdb_cover(
+                        &record.item.title,
+                        &title_variants,
+                        "movie",
+                        &record.item.media_type,
+                        tmdb_api_key,
+                        record.year_hint,
+                        exa_api_key,
+                    )
+                    .await?;
+                    cover
+                }
+                "TV" => {
+                    let cover = fetch_tmdb_cover(
+                        &record.item.title,
+                        &title_variants,
+                        "tv",
+                        &record.item.media_type,
+                        tmdb_api_key,
+                        record.year_hint,
+                        exa_api_key,
+                    )
+                    .await?;
+                    cover
+                }
+                "Anime" => {
+                    let mut cover = None;
+                    if movie_hint {
+                        cover = fetch_tmdb_cover(
+                            &record.item.title,
+                            &title_variants,
+                            "movie",
+                            &record.item.media_type,
+                            tmdb_api_key,
+                            record.year_hint,
+                            exa_api_key,
+                        )
+                        .await?;
+                    } else {
+                        cover = fetch_tmdb_cover(
+                            &record.item.title,
+                            &title_variants,
+                            "tv",
+                            &record.item.media_type,
+                            tmdb_api_key,
+                            record.year_hint,
+                            exa_api_key,
+                        )
+                        .await?;
+                        if cover.is_none() && !season_hint {
+                            cover = fetch_tmdb_cover(
+                                &record.item.title,
+                                &title_variants,
+                                "movie",
+                                &record.item.media_type,
+                                tmdb_api_key,
+                                record.year_hint,
+                                exa_api_key,
+                            )
+                            .await?;
+                        }
+                    }
+                    cover
+                }
+                "Book" => fetch_open_library_cover(&record.item.title).await?,
+                "Game" => {
+                    fetch_igdb_cover(
+                        &record.item.title,
+                        record.year_hint,
+                        igdb_client_id,
+                        &igdb_token,
+                    )
+                    .await?
+                }
+                "YouTube" => fetch_youtube_cover(record.youtube_id.as_deref(), record.url.as_deref()),
+                _ => None,
+            };
+
+            if let Some((cover_url, source)) = maybe_cover {
+                cache.insert(
+                    record.item.id.clone(),
+                    MediaCoverEntry {
+                        cover_url,
+                        source,
+                        fetched_at: Utc::now().to_rfc3339(),
+                    },
+                );
+                fixed += 1;
+            } else {
+                failed.push(record.item.title.clone());
+            }
+        }
+
+        if chunk_index + 1 < chunk_count {
+            sleep(StdDuration::from_millis(200)).await;
+        }
+    }
+
+    write_media_cover_cache(&root, &cache)?;
+    write_media_cover_broken(&root, &broken_sources)?;
+
+    Ok(FixCoversResult {
+        fixed,
+        already_valid,
+        failed,
+    })
+}
+
+/// Re-fetches the cover for a single media item by clearing it from cache files
+/// and re-running enrichment for just that item.
+pub async fn refetch_media_cover(
+    workspace_path: &str,
+    obsidian_root: Option<&str>,
+    media_id: &str,
+    tmdb_api_key: Option<&str>,
+    igdb_client_id: Option<&str>,
+    igdb_client_secret: Option<&str>,
+    exa_api_key: Option<&str>,
+) -> Result<Option<String>, String> {
+    let root = resolve_obsidian_root(workspace_path, obsidian_root);
+    if !root.exists() {
+        return Err(format!(
+            "Obsidian root not found: {}",
+            root.to_string_lossy()
+        ));
+    }
+
+    // 1. Remove from v1 cache (media.covers.v1.json)
+    let v1_path = media_cover_cache_path(&root);
+    if v1_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&v1_path) {
+            if let Ok(mut cache) =
+                serde_json::from_str::<HashMap<String, MediaCoverEntry>>(&content)
+            {
+                cache.remove(media_id);
+                if let Ok(json) = serde_json::to_string_pretty(&cache) {
+                    let _ = std::fs::write(&v1_path, json);
+                }
+            }
+        }
+    }
+
+    // 2. Remove from ai-fixed cache (media.covers.ai-fixed.json)
+    // Note: We need to preserve the _metadata key when writing back
+    let ai_path = media_cover_ai_fixed_path(&root);
+    if ai_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&ai_path) {
+            if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(obj) = parsed.as_object_mut() {
+                    obj.remove(media_id);
+                    if let Ok(json) = serde_json::to_string_pretty(&parsed) {
+                        let _ = std::fs::write(&ai_path, json);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Find the specific media item to re-enrich
+    let records = load_media_items(&root);
+    let record = records.into_iter().find(|r| r.item.id == media_id);
+
+    let Some(record) = record else {
+        return Err(format!("Media item not found: {}", media_id));
+    };
+
+    // 4. Check if there's a manual override - if so, we won't re-fetch
+    let overrides = load_media_cover_overrides(&root);
+    if overrides.contains_key(media_id) {
+        return Err(
+            "Cannot refetch: media has a manual override in media.covers.overrides.json".into(),
+        );
+    }
+
+    // 5. Fetch IGDB token if needed for games
+    let igdb_token = if record.item.media_type == "Game" {
+        match (igdb_client_id, igdb_client_secret) {
+            (Some(id), Some(secret)) if !id.is_empty() && !secret.is_empty() => {
+                fetch_igdb_token(id, secret).await?
+            }
+            _ => String::new(),
+        }
+    } else {
+        String::new()
+    };
+
+    // 6. Re-fetch the cover for this item
+    let title_variants = title_variants(&record.item.title);
+    let movie_hint = has_movie_hint(&record.item.title);
+    let season_hint = has_season_hint(&record.item.title);
+
+    let maybe_cover = match record.item.media_type.as_str() {
+        "Film" => {
+            fetch_tmdb_cover(
+                &record.item.title,
+                &title_variants,
+                "movie",
+                &record.item.media_type,
+                tmdb_api_key,
+                record.year_hint,
+                exa_api_key,
+            )
+            .await?
+        }
+        "TV" => {
+            fetch_tmdb_cover(
+                &record.item.title,
+                &title_variants,
+                "tv",
+                &record.item.media_type,
+                tmdb_api_key,
+                record.year_hint,
+                exa_api_key,
+            )
+            .await?
+        }
+        "Anime" => {
+            let mut cover = None;
+            if movie_hint {
+                cover = fetch_tmdb_cover(
+                    &record.item.title,
+                    &title_variants,
+                    "movie",
+                    &record.item.media_type,
+                    tmdb_api_key,
+                    record.year_hint,
+                    exa_api_key,
+                )
+                .await?;
+            } else {
+                cover = fetch_tmdb_cover(
+                    &record.item.title,
+                    &title_variants,
+                    "tv",
+                    &record.item.media_type,
+                    tmdb_api_key,
+                    record.year_hint,
+                    exa_api_key,
+                )
+                .await?;
+                if cover.is_none() && !season_hint {
+                    cover = fetch_tmdb_cover(
+                        &record.item.title,
+                        &title_variants,
+                        "movie",
+                        &record.item.media_type,
+                        tmdb_api_key,
+                        record.year_hint,
+                        exa_api_key,
+                    )
+                    .await?;
+                }
+            }
+            cover
+        }
+        "Book" => fetch_open_library_cover(&record.item.title).await?,
+        "Game" => {
+            fetch_igdb_cover(
+                &record.item.title,
+                record.year_hint,
+                igdb_client_id,
+                &igdb_token,
+            )
+            .await?
+        }
+        "YouTube" => fetch_youtube_cover(record.youtube_id.as_deref(), record.url.as_deref()),
+        _ => None,
+    };
+
+    // 7. Update the cache with the new cover
+    let new_cover_url = if let Some((cover_url, source)) = maybe_cover {
+        let mut cache = load_media_cover_cache(&root);
+        cache.insert(
+            media_id.to_string(),
+            MediaCoverEntry {
+                cover_url: cover_url.clone(),
+                source,
+                fetched_at: Utc::now().to_rfc3339(),
+            },
+        );
+        write_media_cover_cache(&root, &cache)?;
+        Some(cover_url)
+    } else {
+        None
+    };
+
+    Ok(new_cover_url)
 }
 
 fn resolve_obsidian_root(workspace_path: &str, obsidian_root: Option<&str>) -> PathBuf {
@@ -1471,6 +2171,7 @@ fn parse_orders_table(body: &str, date: NaiveDate, session_id: &str) -> Vec<Deli
             id: format!("{session_id}-{row_index}"),
             started_at,
             merchant_name: merchant_value.to_string(),
+            logo_url: None,
             payout: payout.unwrap_or(0.0),
             miles: parse_f64(miles_value),
             duration_minutes: None,
@@ -1487,6 +2188,7 @@ fn parse_orders_table(body: &str, date: NaiveDate, session_id: &str) -> Vec<Deli
 fn build_top_merchants(
     orders: &[DeliveryOrder],
     tier_map: &HashMap<String, String>,
+    logo_map: &HashMap<String, String>,
 ) -> Vec<MerchantStats> {
     let mut map: HashMap<String, (u32, f64, f64, u32)> = HashMap::new();
     for order in orders {
@@ -1525,8 +2227,10 @@ fn build_top_merchants(
                     .get(&merchant_name.to_lowercase())
                     .cloned()
                     .or_else(|| tier_map.get(&merchant_name).cloned());
+                let logo_url = logo_map.get(&normalize_lookup_key(&merchant_name)).cloned();
                 MerchantStats {
                     merchant_name,
+                    logo_url,
                     order_count: count,
                     total_earnings: total,
                     avg_payout,
@@ -1563,6 +2267,76 @@ fn load_delivery_merchant_tiers(root: &Path) -> HashMap<String, String> {
         .collect()
 }
 
+fn normalize_lookup_key(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn load_string_map(path: &Path) -> HashMap<String, String> {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if !path.exists() {
+        let _ = std::fs::write(path, "{}");
+        return HashMap::new();
+    }
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(_) => return HashMap::new(),
+    };
+    let parsed = serde_json::from_str::<HashMap<String, String>>(&content).unwrap_or_default();
+    parsed
+        .into_iter()
+        .filter_map(|(key, value)| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some((normalize_lookup_key(&key), trimmed))
+            }
+        })
+        .collect()
+}
+
+fn merchant_logos_path(root: &Path) -> PathBuf {
+    root.join("Indexes").join("merchant.logos.json")
+}
+
+fn food_images_path(root: &Path) -> PathBuf {
+    root.join("Indexes").join("food.images.json")
+}
+
+fn company_logos_path(root: &Path) -> PathBuf {
+    root.join("Indexes").join("company.logos.json")
+}
+
+fn load_merchant_logos(root: &Path) -> HashMap<String, String> {
+    load_string_map(&merchant_logos_path(root))
+}
+
+fn load_food_images(root: &Path) -> HashMap<String, String> {
+    load_string_map(&food_images_path(root))
+}
+
+fn load_company_logos(root: &Path) -> HashMap<String, String> {
+    load_string_map(&company_logos_path(root))
+}
+
+fn select_food_image(meal: &MealParseRecord, images: &HashMap<String, String>) -> Option<String> {
+    let mut candidates = Vec::new();
+    if !meal.description.trim().is_empty() {
+        candidates.push(meal.description.clone());
+    }
+    candidates.extend(meal.foods.iter().cloned());
+
+    for candidate in candidates {
+        let key = normalize_lookup_key(&candidate);
+        if let Some(url) = images.get(&key) {
+            return Some(url.clone());
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone)]
 struct MediaRecord {
     item: MediaItem,
@@ -1595,7 +2369,7 @@ fn load_media_items(root: &Path) -> Vec<MediaRecord> {
             Ok(content) => content,
             Err(_) => continue,
         };
-        let (frontmatter, _) = split_frontmatter(&content);
+        let (frontmatter, body) = split_frontmatter(&content);
         let Some(frontmatter) = frontmatter else {
             continue;
         };
@@ -1629,6 +2403,15 @@ fn load_media_items(root: &Path) -> Vec<MediaRecord> {
             .as_ref()
             .and_then(parse_year_value)
             .or_else(|| extract_year_from_title(&title));
+        // Capture notes from body (trimmed, None if empty)
+        let notes = {
+            let trimmed = body.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        };
         let item = MediaItem {
             id,
             title,
@@ -1639,6 +2422,8 @@ fn load_media_items(root: &Path) -> Vec<MediaRecord> {
             created_at,
             updated_at,
             completed_at: parsed.completed_at,
+            year: year_hint,
+            notes,
         };
         items.push(MediaRecord {
             item,
@@ -1653,6 +2438,14 @@ fn load_media_items(root: &Path) -> Vec<MediaRecord> {
 
 fn media_cover_cache_path(root: &Path) -> PathBuf {
     root.join("Indexes").join("media.covers.v1.json")
+}
+
+fn media_cover_cache_v2_path(root: &Path) -> PathBuf {
+    root.join("Indexes").join("media.covers.v2.json")
+}
+
+fn media_cover_broken_path(root: &Path) -> PathBuf {
+    root.join("Indexes").join("media.covers.broken.json")
 }
 
 fn media_cover_overrides_path(root: &Path) -> PathBuf {
@@ -1709,6 +2502,42 @@ fn load_media_cover_overrides(root: &Path) -> HashMap<String, MediaCoverOverride
     HashMap::new()
 }
 
+fn media_cover_ai_fixed_path(root: &Path) -> PathBuf {
+    root.join("Indexes").join("media.covers.ai-fixed.json")
+}
+
+fn load_media_cover_ai_fixed(root: &Path) -> HashMap<String, MediaCoverAiFixed> {
+    let path = media_cover_ai_fixed_path(root);
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(_) => return HashMap::new(),
+    };
+
+    // Parse as a generic JSON value first to handle the _metadata key
+    let parsed: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return HashMap::new(),
+    };
+
+    let Some(obj) = parsed.as_object() else {
+        return HashMap::new();
+    };
+
+    let mut result = HashMap::new();
+    for (key, value) in obj {
+        // Skip the _metadata key
+        if key.starts_with('_') {
+            continue;
+        }
+        if let Ok(entry) = serde_json::from_value::<MediaCoverAiFixed>(value.clone()) {
+            if !entry.cover_url.trim().is_empty() {
+                result.insert(key.clone(), entry);
+            }
+        }
+    }
+    result
+}
+
 fn load_media_cover_cache(root: &Path) -> HashMap<String, MediaCoverEntry> {
     let path = media_cover_cache_path(root);
     let content = match std::fs::read_to_string(path) {
@@ -1716,6 +2545,40 @@ fn load_media_cover_cache(root: &Path) -> HashMap<String, MediaCoverEntry> {
         Err(_) => return HashMap::new(),
     };
     serde_json::from_str::<HashMap<String, MediaCoverEntry>>(&content).unwrap_or_default()
+}
+
+fn load_media_cover_cache_v2(root: &Path) -> HashMap<String, MediaCoverEntryV2> {
+    let path = media_cover_cache_v2_path(root);
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(_) => return HashMap::new(),
+    };
+    serde_json::from_str::<HashMap<String, MediaCoverEntryV2>>(&content).unwrap_or_default()
+}
+
+fn load_media_cover_broken(root: &Path) -> HashMap<String, String> {
+    let path = media_cover_broken_path(root);
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(_) => return HashMap::new(),
+    };
+
+    if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&content) {
+        return map
+            .into_iter()
+            .filter(|(key, value)| !key.trim().is_empty() && !value.trim().is_empty())
+            .collect();
+    }
+
+    if let Ok(list) = serde_json::from_str::<Vec<String>>(&content) {
+        return list
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| (value, "unknown".to_string()))
+            .collect();
+    }
+
+    HashMap::new()
 }
 
 fn write_media_cover_cache(
@@ -1727,6 +2590,32 @@ fn write_media_cover_cache(
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
     let payload = serde_json::to_string_pretty(cache).map_err(|err| err.to_string())?;
+    std::fs::write(path, payload).map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn write_media_cover_cache_v2(
+    root: &Path,
+    cache: &HashMap<String, MediaCoverEntryV2>,
+) -> Result<(), String> {
+    let path = media_cover_cache_v2_path(root);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let payload = serde_json::to_string_pretty(cache).map_err(|err| err.to_string())?;
+    std::fs::write(path, payload).map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn write_media_cover_broken(
+    root: &Path,
+    broken: &HashMap<String, String>,
+) -> Result<(), String> {
+    let path = media_cover_broken_path(root);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let payload = serde_json::to_string_pretty(broken).map_err(|err| err.to_string())?;
     std::fs::write(path, payload).map_err(|err| err.to_string())?;
     Ok(())
 }
@@ -2127,6 +3016,7 @@ fn load_bill_records(bills_dir: &Path, today: NaiveDate) -> Vec<BillRecord> {
                 .unwrap_or(&name)
                 .to_string(),
             name,
+            logo_url: None,
             amount,
             due_day,
             frequency: frequency.clone(),
@@ -2710,8 +3600,107 @@ fn title_variants(title: &str) -> Vec<String> {
     let no_bullet = base.replace('·', " ");
     push_variant(&mut variants, no_bullet);
 
+    let lower = base.to_lowercase();
+    if lower.contains("chainsaw") {
+        push_variant(&mut variants, base.replace("Chainsaw", "Chain Saw").replace("chainsaw", "chain saw"));
+    }
+    if lower.contains("wall-e") || lower.contains("wall e") || lower.contains("wall·e") {
+        push_variant(&mut variants, "WALL·E".to_string());
+        push_variant(&mut variants, "WALLE".to_string());
+    }
+
+    for alias in title_aliases(title) {
+        push_variant(&mut variants, alias);
+    }
+
     variants
 }
+
+fn title_aliases(title: &str) -> Vec<String> {
+    let mut aliases = Vec::new();
+    let lower = title.to_lowercase();
+    if lower.contains("star wars") && lower.contains("episode") {
+        if let Some(episode) = extract_episode_number(title) {
+            let subtitle = match episode {
+                1 => Some("The Phantom Menace"),
+                2 => Some("Attack of the Clones"),
+                3 => Some("Revenge of the Sith"),
+                4 => Some("A New Hope"),
+                5 => Some("The Empire Strikes Back"),
+                6 => Some("Return of the Jedi"),
+                _ => None,
+            };
+            if let Some(subtitle) = subtitle {
+                aliases.push(subtitle.to_string());
+                aliases.push(format!("Star Wars: Episode {} - {}", episode, subtitle));
+            }
+        }
+    }
+    if lower.contains("ghost in the shell") && lower.contains("sac") {
+        aliases.push("Ghost in the Shell: Stand Alone Complex".to_string());
+        aliases.push("Stand Alone Complex".to_string());
+    }
+    aliases
+}
+
+fn match_terms_for_title(title: &str) -> Vec<String> {
+    let mut terms = Vec::new();
+    terms.push(title.to_string());
+    terms.extend(basic_title_variants(title));
+    terms.extend(title_aliases(title));
+    terms
+}
+
+fn basic_title_variants(title: &str) -> Vec<String> {
+    let mut variants = Vec::new();
+    let base = collapse_whitespace(title);
+    let no_parens = strip_parenthetical(&base);
+    let no_season = strip_season_suffix(&base);
+    let no_parens_no_season = strip_season_suffix(&no_parens);
+    let no_trailing_series = strip_trailing_series_number(&no_parens_no_season);
+    push_variant(&mut variants, base);
+    push_variant(&mut variants, no_parens);
+    push_variant(&mut variants, no_season);
+    push_variant(&mut variants, no_parens_no_season);
+    push_variant(&mut variants, no_trailing_series);
+    variants
+}
+
+fn extract_episode_number(title: &str) -> Option<u8> {
+    let normalized = normalize_title_for_match(title);
+    let tokens: Vec<&str> = normalized.split_whitespace().collect();
+    for idx in 0..tokens.len() {
+        if tokens[idx] == "episode" {
+            if let Some(next) = tokens.get(idx + 1) {
+                if let Ok(num) = next.parse::<u8>() {
+                    return Some(num);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn relaxed_title_terms(title: &str) -> Vec<String> {
+    let mut tokens = normalize_tokens(title);
+    tokens.sort_by(|a, b| b.len().cmp(&a.len()));
+    tokens
+        .into_iter()
+        .filter(|token| token.len() >= 3)
+        .take(2)
+        .collect()
+}
+
+fn guess_year_for_media(_media_type: &str, year_hint: Option<i32>, title: &str) -> Option<i32> {
+    if let Some(year) = year_hint {
+        return Some(year);
+    }
+    if let Some(year) = extract_year_from_title(title) {
+        return Some(year);
+    }
+    None
+}
+
 
 fn game_title_variants(title: &str) -> Vec<String> {
     let mut variants = title_variants(title);
@@ -2869,10 +3858,580 @@ fn has_season_hint(title: &str) -> bool {
     lower.contains("s1-") || lower.contains("s2-") || lower.contains("s3-")
 }
 
+async fn fetch_tmdb_official_cover(
+    title: &str,
+    variants: &[String],
+    media_type: &str,
+    tmdb_api_key: Option<&str>,
+    year_hint: Option<i32>,
+    exa_api_key: Option<&str>,
+    require_english: bool,
+    require_animation: bool,
+    prefer_earliest: bool,
+    season_number: Option<u32>,
+) -> Result<Option<CoverMeta>, String> {
+    let Some(api_key) = tmdb_api_key else {
+        return Ok(None);
+    };
+    if api_key.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let target_year = year_hint;
+    let apply_year_filter = year_hint.is_some();
+    let match_terms = match_terms_for_title(title);
+    let mut candidates = fetch_tmdb_candidates(
+        title,
+        variants,
+        &match_terms,
+        media_type,
+        api_key,
+        target_year,
+        apply_year_filter,
+        require_animation,
+    )
+    .await?;
+    let has_exact = candidates.iter().any(|candidate| candidate.title_score == 3);
+    if candidates.is_empty() || !has_exact {
+        let mut fallback =
+            fetch_tmdb_candidates(
+                title,
+                variants,
+                &match_terms,
+                media_type,
+                api_key,
+                target_year,
+                false,
+                require_animation,
+            )
+            .await?;
+        candidates.append(&mut fallback);
+    }
+    if candidates.is_empty() || candidates.iter().all(|candidate| candidate.title_score == 0) {
+        return Ok(None);
+    }
+    let prefer_earliest = prefer_earliest && target_year.is_none();
+    let use_year = target_year.is_some();
+    candidates.sort_by(|a, b| {
+        b.title_score
+            .cmp(&a.title_score)
+            .then_with(|| {
+                if prefer_earliest {
+                    a.year.unwrap_or(9999).cmp(&b.year.unwrap_or(9999))
+                } else if use_year {
+                    a.year_diff.cmp(&b.year_diff)
+                } else {
+                    b.popularity
+                        .partial_cmp(&a.popularity)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+            })
+            .then_with(|| b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    candidates.dedup_by(|a, b| a.id == b.id);
+
+    candidates.sort_by(|a, b| {
+        b.title_score
+            .cmp(&a.title_score)
+            .then_with(|| {
+                if prefer_earliest {
+                    a.year.unwrap_or(9999).cmp(&b.year.unwrap_or(9999))
+                } else if use_year {
+                    a.year_diff.cmp(&b.year_diff)
+                } else {
+                    b.popularity
+                        .partial_cmp(&a.popularity)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+            })
+            .then_with(|| b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    let top = &candidates[0];
+    if top.title_score < 2 && exa_api_key.is_some() && !require_animation {
+        if let Some(exa_cover) = fetch_exa_tmdb_official_cover(
+            title,
+            variants,
+            &match_terms,
+            media_type,
+            api_key,
+            exa_api_key.unwrap_or(""),
+            target_year,
+            require_english,
+        )
+        .await?
+        {
+            return Ok(Some(exa_cover));
+        }
+    }
+    if top.title_score == 0 {
+        return Ok(None);
+    }
+
+    let detail = fetch_tmdb_details(api_key, media_type, top.id).await?;
+    if media_type == "tv" {
+        if let Some(season) = season_number {
+            if let Some(season_path) = fetch_tmdb_season_poster(api_key, top.id, season).await? {
+                return Ok(Some(CoverMeta {
+                    cover_url: format!("https://image.tmdb.org/t/p/w500{season_path}"),
+                    source: "tmdb".to_string(),
+                    source_id: Some(format!("tmdb:{media_type}:{}:season:{season}", top.id)),
+                    matched_title: detail
+                        .title
+                        .clone()
+                        .or(detail.name.clone())
+                        .or_else(|| Some(top.title.clone())),
+                    matched_year: detail
+                        .release_date
+                        .as_deref()
+                        .and_then(|value| value.split('-').next())
+                        .and_then(|value| value.parse::<i32>().ok())
+                        .or(detail
+                            .first_air_date
+                            .as_deref()
+                            .and_then(|value| value.split('-').next())
+                            .and_then(|value| value.parse::<i32>().ok()))
+                        .or(top.year),
+                    match_confidence: Some(top.match_confidence),
+                    language: Some("en".to_string()),
+                    poster_type: Some("season".to_string()),
+                }));
+            }
+        }
+    }
+    let images = fetch_tmdb_images(api_key, media_type, top.id).await?;
+    let selected = select_tmdb_poster(
+        detail.poster_path.as_deref(),
+        &images.posters,
+        require_english,
+    );
+
+    let Some(poster) = selected else {
+        return Ok(None);
+    };
+
+    let matched_title = detail
+        .title
+        .clone()
+        .or(detail.name.clone())
+        .or_else(|| Some(top.title.clone()));
+    let matched_year = detail
+        .release_date
+        .as_deref()
+        .and_then(|value| value.split('-').next())
+        .and_then(|value| value.parse::<i32>().ok())
+        .or(detail
+            .first_air_date
+            .as_deref()
+            .and_then(|value| value.split('-').next())
+            .and_then(|value| value.parse::<i32>().ok()))
+        .or(top.year);
+
+    Ok(Some(CoverMeta {
+        cover_url: format!("https://image.tmdb.org/t/p/w500{}", poster.file_path),
+        source: "tmdb".to_string(),
+        source_id: Some(format!("tmdb:{media_type}:{}", top.id)),
+        matched_title,
+        matched_year,
+        match_confidence: Some(top.match_confidence),
+        language: poster.iso_639_1.clone().or(Some("unknown".to_string())),
+        poster_type: Some(poster.poster_type.clone()),
+    }))
+}
+
+async fn fetch_tmdb_candidates(
+    title: &str,
+    variants: &[String],
+    match_terms: &[String],
+    media_type: &str,
+    api_key: &str,
+    year_hint: Option<i32>,
+    apply_year_filter: bool,
+    require_animation: bool,
+) -> Result<Vec<TmdbCandidateV2>, String> {
+    let base = format!("https://api.themoviedb.org/3/search/{media_type}");
+    let client = Client::builder()
+        .timeout(StdDuration::from_secs(8))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let mut candidates: Vec<TmdbCandidateV2> = Vec::new();
+
+    for variant in variants {
+        let mut url = Url::parse(&base).map_err(|err| err.to_string())?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs
+                .append_pair("api_key", api_key)
+                .append_pair("query", variant)
+                .append_pair("include_adult", "false")
+                .append_pair("language", "en-US");
+            if apply_year_filter {
+                if let Some(year) = year_hint {
+                    if media_type == "movie" {
+                        pairs.append_pair("year", &year.to_string());
+                    } else if media_type == "tv" {
+                        pairs.append_pair("first_air_date_year", &year.to_string());
+                    }
+                }
+            }
+        }
+        let payload: TmdbSearchResponse = match tmdb_get_json(&client, url.as_str()).await {
+            Ok(payload) => payload,
+            Err(_) => continue,
+        };
+        for result in payload.results {
+            let genre_ids = result.genre_ids.clone().unwrap_or_default();
+            if require_animation && !genre_ids.contains(&16) {
+                continue;
+            }
+            let title_value = result
+                .title
+                .clone()
+                .or_else(|| result.name.clone())
+                .unwrap_or_default();
+            if title_value.trim().is_empty() {
+                continue;
+            }
+            let year = result
+                .release_date
+                .clone()
+                .or_else(|| result.first_air_date.clone())
+                .and_then(|value| value.split('-').next().and_then(|value| value.parse::<i32>().ok()));
+            let title_score = match_terms
+                .iter()
+                .map(|term| score_title_match(&title_value, term))
+                .max()
+                .unwrap_or(0);
+            let year_diff = year_hint
+                .and_then(|target| year.map(|value| (value - target).abs()))
+                .unwrap_or(999);
+            let match_confidence = calculate_match_confidence(title_score, year_diff);
+            candidates.push(TmdbCandidateV2 {
+                id: result.id.unwrap_or_default(),
+                title: title_value,
+                year,
+                popularity: result.popularity.unwrap_or(0.0),
+                title_score,
+                year_diff,
+                match_confidence,
+                ambiguous: false,
+            });
+        }
+    }
+
+    if candidates.is_empty() {
+        for term in relaxed_title_terms(title) {
+            let mut url = Url::parse(&base).map_err(|err| err.to_string())?;
+            {
+                let mut pairs = url.query_pairs_mut();
+                pairs
+                    .append_pair("api_key", api_key)
+                    .append_pair("query", &term)
+                    .append_pair("include_adult", "false")
+                    .append_pair("language", "en-US");
+                if apply_year_filter {
+                    if let Some(year) = year_hint {
+                        if media_type == "movie" {
+                            pairs.append_pair("year", &year.to_string());
+                        } else if media_type == "tv" {
+                            pairs.append_pair("first_air_date_year", &year.to_string());
+                        }
+                    }
+                }
+            }
+            let payload: TmdbSearchResponse = match tmdb_get_json(&client, url.as_str()).await {
+                Ok(payload) => payload,
+                Err(_) => continue,
+            };
+            for result in payload.results {
+                let genre_ids = result.genre_ids.clone().unwrap_or_default();
+                if require_animation && !genre_ids.contains(&16) {
+                    continue;
+                }
+                let title_value = result
+                    .title
+                    .clone()
+                    .or_else(|| result.name.clone())
+                    .unwrap_or_default();
+                if title_value.trim().is_empty() {
+                    continue;
+                }
+                let year = result
+                    .release_date
+                    .clone()
+                    .or_else(|| result.first_air_date.clone())
+                    .and_then(|value| value.split('-').next().and_then(|value| value.parse::<i32>().ok()));
+                let title_score = match_terms
+                    .iter()
+                    .map(|term| score_title_match(&title_value, term))
+                    .max()
+                    .unwrap_or(0);
+                let year_diff = year_hint
+                    .and_then(|target| year.map(|value| (value - target).abs()))
+                    .unwrap_or(999);
+                let match_confidence = calculate_match_confidence(title_score, year_diff);
+                candidates.push(TmdbCandidateV2 {
+                    id: result.id.unwrap_or_default(),
+                    title: title_value,
+                    year,
+                    popularity: result.popularity.unwrap_or(0.0),
+                    title_score,
+                    year_diff,
+                    match_confidence,
+                    ambiguous: false,
+                });
+            }
+        }
+    }
+
+    if candidates.len() > 1 {
+        candidates.sort_by(|a, b| {
+            b.title_score
+                .cmp(&a.title_score)
+                .then_with(|| a.year_diff.cmp(&b.year_diff))
+                .then_with(|| b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal))
+        });
+        let top = &candidates[0];
+        let second = &candidates[1];
+        let ambiguous = top.title_score <= 1 || (top.year_diff - second.year_diff).abs() <= 1;
+        candidates[0].ambiguous = ambiguous;
+    }
+
+    Ok(candidates)
+}
+
+fn score_title_match(candidate: &str, title: &str) -> i32 {
+    let cand_tokens = normalize_tokens(candidate);
+    let base_tokens = normalize_tokens(title);
+    if base_tokens.is_empty() || cand_tokens.is_empty() {
+        return 0;
+    }
+    let matched = base_tokens
+        .iter()
+        .filter(|token| cand_tokens.contains(*token))
+        .count() as f64;
+    let ratio = matched / base_tokens.len() as f64;
+    if (ratio - 1.0).abs() < f64::EPSILON {
+        if cand_tokens.len() == base_tokens.len() {
+            3
+        } else {
+            2
+        }
+    } else if ratio >= 0.8 {
+        2
+    } else if ratio >= 0.6 {
+        1
+    } else {
+        0
+    }
+}
+
+fn calculate_match_confidence(title_score: i32, year_diff: i32) -> f64 {
+    let base = match title_score {
+        3 => 0.95,
+        2 => 0.85,
+        _ => 0.6,
+    };
+    let penalty = (year_diff.min(10) as f64) * 0.02;
+    (base - penalty).clamp(0.0, 1.0)
+}
+
+#[derive(Debug, Clone)]
+struct TmdbCandidateV2 {
+    id: u64,
+    title: String,
+    year: Option<i32>,
+    popularity: f64,
+    title_score: i32,
+    year_diff: i32,
+    match_confidence: f64,
+    ambiguous: bool,
+}
+
+#[derive(Debug, Clone)]
+struct TmdbPosterChoice {
+    file_path: String,
+    iso_639_1: Option<String>,
+    poster_type: String,
+}
+
+async fn fetch_tmdb_details(
+    api_key: &str,
+    media_type: &str,
+    id: u64,
+) -> Result<TmdbResult, String> {
+    let url = format!("https://api.themoviedb.org/3/{media_type}/{id}?api_key={api_key}&language=en-US");
+    let client = Client::builder()
+        .timeout(StdDuration::from_secs(8))
+        .build()
+        .map_err(|err| err.to_string())?;
+    tmdb_get_json(&client, &url).await
+}
+
+async fn fetch_tmdb_images(
+    api_key: &str,
+    media_type: &str,
+    id: u64,
+) -> Result<TmdbImagesResponse, String> {
+    let url = format!("https://api.themoviedb.org/3/{media_type}/{id}/images?api_key={api_key}");
+    let client = Client::builder()
+        .timeout(StdDuration::from_secs(8))
+        .build()
+        .map_err(|err| err.to_string())?;
+    tmdb_get_json(&client, &url).await
+}
+
+async fn fetch_tmdb_season_poster(
+    api_key: &str,
+    id: u64,
+    season: u32,
+) -> Result<Option<String>, String> {
+    let url = format!(
+        "https://api.themoviedb.org/3/tv/{id}/season/{season}?api_key={api_key}&language=en-US"
+    );
+    let client = Client::builder()
+        .timeout(StdDuration::from_secs(8))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let payload: TmdbSeasonResult = tmdb_get_json(&client, &url).await?;
+    Ok(payload.poster_path)
+}
+
+async fn tmdb_get_json<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, String> {
+    let mut delay_ms = 250u64;
+    for attempt in 0..3 {
+        let resp = client.get(url).send().await;
+        match resp {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    let parsed = resp.json().await.map_err(|err| err.to_string())?;
+                    sleep(StdDuration::from_millis(200)).await;
+                    return Ok(parsed);
+                }
+                if resp.status().as_u16() == 429 || resp.status().is_server_error() {
+                    sleep(StdDuration::from_millis(delay_ms)).await;
+                    delay_ms = (delay_ms * 2).min(2000);
+                    continue;
+                }
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                return Err(format!("TMDB request failed: {} {}", status, text));
+            }
+            Err(err) => {
+                if attempt == 2 {
+                    return Err(err.to_string());
+                }
+                sleep(StdDuration::from_millis(delay_ms)).await;
+                delay_ms = (delay_ms * 2).min(2000);
+            }
+        }
+    }
+    Err("TMDB request failed".to_string())
+}
+
+fn select_tmdb_poster(
+    primary_path: Option<&str>,
+    posters: &[TmdbImage],
+    require_english: bool,
+) -> Option<TmdbPosterChoice> {
+    let mut english: Vec<TmdbPosterChoice> = Vec::new();
+    let mut neutral: Vec<TmdbPosterChoice> = Vec::new();
+    let mut other: Vec<TmdbPosterChoice> = Vec::new();
+
+    for poster in posters {
+        match poster.iso_639_1.as_deref() {
+            Some("en") => english.push(TmdbPosterChoice {
+                file_path: poster.file_path.clone(),
+                iso_639_1: poster.iso_639_1.clone(),
+                poster_type: "english".to_string(),
+            }),
+            None => neutral.push(TmdbPosterChoice {
+                file_path: poster.file_path.clone(),
+                iso_639_1: poster.iso_639_1.clone(),
+                poster_type: "neutral".to_string(),
+            }),
+            Some(_) => other.push(TmdbPosterChoice {
+                file_path: poster.file_path.clone(),
+                iso_639_1: poster.iso_639_1.clone(),
+                poster_type: "foreign".to_string(),
+            }),
+        }
+    }
+
+    if let Some(primary) = primary_path {
+        if let Some(found) = english.iter().find(|poster| poster.file_path == primary) {
+            return Some(TmdbPosterChoice {
+                file_path: found.file_path.clone(),
+                iso_639_1: found.iso_639_1.clone(),
+                poster_type: "primary".to_string(),
+            });
+        }
+        if !require_english && english.is_empty() {
+            if let Some(found) = neutral.iter().find(|poster| poster.file_path == primary) {
+                return Some(TmdbPosterChoice {
+                    file_path: found.file_path.clone(),
+                    iso_639_1: found.iso_639_1.clone(),
+                    poster_type: "primary".to_string(),
+                });
+            }
+            if neutral.is_empty() {
+                if let Some(found) = other.iter().find(|poster| poster.file_path == primary) {
+                    return Some(TmdbPosterChoice {
+                        file_path: found.file_path.clone(),
+                        iso_639_1: found.iso_639_1.clone(),
+                        poster_type: "primary".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    let mut select_by_votes = |list: &mut Vec<TmdbPosterChoice>| -> Option<TmdbPosterChoice> {
+        if list.is_empty() {
+            return None;
+        }
+        list.sort_by(|a, b| {
+            let a_votes = posters
+                .iter()
+                .find(|poster| poster.file_path == a.file_path)
+                .map(|poster| poster.vote_count.unwrap_or(0))
+                .unwrap_or(0);
+            let b_votes = posters
+                .iter()
+                .find(|poster| poster.file_path == b.file_path)
+                .map(|poster| poster.vote_count.unwrap_or(0))
+                .unwrap_or(0);
+            b_votes.cmp(&a_votes)
+        });
+        list.drain(..).next()
+    };
+
+    if let Some(poster) = select_by_votes(&mut english) {
+        return Some(poster);
+    }
+    if require_english {
+        return None;
+    }
+
+    if let Some(poster) = select_by_votes(&mut neutral) {
+        return Some(poster);
+    }
+    if let Some(poster) = select_by_votes(&mut other) {
+        return Some(poster);
+    }
+
+    posters.first().map(|poster| TmdbPosterChoice {
+        file_path: poster.file_path.clone(),
+        iso_639_1: poster.iso_639_1.clone(),
+        poster_type: "fallback".to_string(),
+    })
+}
+
 async fn fetch_tmdb_cover(
     title: &str,
     variants: &[String],
     media_type: &str,
+    media_label: &str,
     tmdb_api_key: Option<&str>,
     year_hint: Option<i32>,
     exa_api_key: Option<&str>,
@@ -2903,11 +4462,9 @@ async fn fetch_tmdb_cover(
                 }
             }
         }
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|err| err.to_string())?;
+        let resp = client.get(url).send().await;
+        sleep(StdDuration::from_millis(100)).await;
+        let resp = resp.map_err(|err| err.to_string())?;
         if !resp.status().is_success() {
             continue;
         }
@@ -2926,7 +4483,6 @@ async fn fetch_tmdb_cover(
                 .clone()
                 .or_else(|| result.original_name.clone())
                 .unwrap_or_default();
-            let original_language = result.original_language.clone();
             let date = result
                 .release_date
                 .clone()
@@ -2936,15 +4492,16 @@ async fn fetch_tmdb_cover(
                 .and_then(|value| value.split('-').next())
                 .and_then(|value| value.parse::<i32>().ok());
             let id = result.id.unwrap_or_default();
+            let popularity = result.popularity.unwrap_or(0.0);
             let score = score_tmdb_candidate(&title, &original, variants, year_hint, year);
             candidates.push(TmdbCandidate {
                 id,
                 title,
                 original_title: original,
-                original_language,
                 year,
                 poster_path,
                 score,
+                popularity,
             });
         }
     }
@@ -2953,26 +4510,57 @@ async fn fetch_tmdb_cover(
         return Ok(None);
     }
 
+    // Sort by score (highest first), then by popularity (highest first) as tiebreaker.
+    // This ensures well-known movies like "Casino Royale (2006)" beat obscure older versions
+    // when there's no year hint to disambiguate.
     candidates.sort_by(|a, b| {
         b.score
             .cmp(&a.score)
-            .then_with(|| a.year.unwrap_or(9999).cmp(&b.year.unwrap_or(9999)))
+            .then_with(|| {
+                // Compare popularity in descending order (higher popularity wins)
+                b.popularity
+                    .partial_cmp(&a.popularity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .then_with(|| a.title.cmp(&b.title))
     });
 
     let top = &candidates[0];
+
+    // Debug: show top candidates for verification
+    #[cfg(debug_assertions)]
+    {
+        eprintln!(
+            "[TMDB] Searching '{}' | Top pick: '{}' (id={}, year={:?}, pop={:.1}, score={})",
+            title, top.title, top.id, top.year, top.popularity, top.score
+        );
+        if let Some(second) = candidates.get(1) {
+            eprintln!(
+                "[TMDB]   Runner-up: '{}' (id={}, year={:?}, pop={:.1}, score={})",
+                second.title, second.id, second.year, second.popularity, second.score
+            );
+        }
+    }
+
     let second_score = candidates
         .get(1)
         .map(|c| c.score)
         .unwrap_or(top.score.saturating_sub(10));
     let ambiguous = top.score <= 4 || (top.score - second_score).abs() <= 1;
-    let allow_exa = ambiguous && year_hint.is_some();
+    let allow_exa = ambiguous;
 
     if allow_exa {
         if let Some(exa_key) = exa_api_key {
-            if let Some(result) =
-                fetch_exa_tmdb_cover(title, variants, media_type, api_key, exa_key, year_hint)
-                    .await?
+            if let Some(result) = fetch_exa_tmdb_cover(
+                title,
+                variants,
+                media_type,
+                media_label,
+                api_key,
+                exa_key,
+                year_hint,
+            )
+            .await?
             {
                 return Ok(Some(result));
             }
@@ -2980,17 +4568,18 @@ async fn fetch_tmdb_cover(
     }
 
     if top.score <= 2 && ambiguous {
+        if top.score >= 0 {
+            let cover = fetch_tmdb_cover_by_id(api_key, media_type, top.id, media_label, title)
+                .await?
+                .unwrap_or_else(|| format!("https://image.tmdb.org/t/p/w500{}", top.poster_path));
+            return Ok(Some((cover, "tmdb-weak".to_string())));
+        }
         return Ok(None);
     }
 
-    let cover = fetch_tmdb_cover_by_id(
-        api_key,
-        media_type,
-        top.id,
-        top.original_language.as_deref(),
-    )
-    .await?
-    .unwrap_or_else(|| format!("https://image.tmdb.org/t/p/w500{}", top.poster_path));
+    let cover = fetch_tmdb_cover_by_id(api_key, media_type, top.id, media_label, title)
+        .await?
+        .unwrap_or_else(|| format!("https://image.tmdb.org/t/p/w500{}", top.poster_path));
     Ok(Some((cover, "tmdb".to_string())))
 }
 
@@ -2999,10 +4588,11 @@ struct TmdbCandidate {
     id: u64,
     title: String,
     original_title: String,
-    original_language: Option<String>,
     year: Option<i32>,
     poster_path: String,
     score: i32,
+    /// TMDB popularity - used as tiebreaker when scores are equal
+    popularity: f64,
 }
 
 fn score_tmdb_candidate(
@@ -3050,18 +4640,36 @@ fn score_tmdb_candidate(
 }
 
 fn normalize_title_for_match(value: &str) -> String {
-    value
-        .to_lowercase()
-        .replace('·', "")
-        .replace(':', "")
-        .replace('-', " ")
-        .replace('_', " ")
-        .replace('’', "")
-        .replace('\'', "")
-        .replace('.', "")
+    let mut cleaned = String::new();
+    for ch in value.to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            cleaned.push(ch);
+        } else {
+            cleaned.push(' ');
+        }
+    }
+    let tokens: Vec<String> = cleaned
         .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+        .map(normalize_roman_token)
+        .collect();
+    tokens.join(" ")
+}
+
+fn normalize_roman_token(token: &str) -> String {
+    match token {
+        "i" => "1",
+        "ii" => "2",
+        "iii" => "3",
+        "iv" => "4",
+        "v" => "5",
+        "vi" => "6",
+        "vii" => "7",
+        "viii" => "8",
+        "ix" => "9",
+        "x" => "10",
+        _ => token,
+    }
+    .to_string()
 }
 
 fn token_mismatch_penalty(candidate: &str, variant: &str) -> i32 {
@@ -3085,17 +4693,66 @@ fn normalize_tokens(value: &str) -> Vec<String> {
     let stop_words = [
         "the", "a", "an", "of", "and", "to", "in", "for", "on", "part", "season",
     ];
-    normalize_title_for_match(value)
+    let raw_tokens: Vec<String> = normalize_title_for_match(value)
         .split_whitespace()
         .map(|token| token.to_string())
         .filter(|token| !stop_words.contains(&token.as_str()))
-        .collect()
+        .filter(|token| !is_year_token(token))
+        .collect();
+    let mut tokens: Vec<String> = Vec::new();
+    let mut idx = 0;
+    while idx < raw_tokens.len() {
+        if idx + 1 < raw_tokens.len()
+            && raw_tokens[idx] == "chain"
+            && raw_tokens[idx + 1] == "saw"
+        {
+            tokens.push("chainsaw".to_string());
+            idx += 2;
+            continue;
+        }
+        tokens.push(raw_tokens[idx].clone());
+        idx += 1;
+    }
+    tokens
+}
+
+fn parse_season_number(title: &str) -> Option<u32> {
+    let normalized = normalize_title_for_match(title);
+    let tokens: Vec<&str> = normalized.split_whitespace().collect();
+    for idx in 0..tokens.len() {
+        let token = tokens[idx];
+        if token.starts_with('s') && token.len() > 1 {
+            let digits: String = token.chars().skip(1).take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(value) = digits.parse::<u32>() {
+                return Some(value);
+            }
+        }
+        if token == "season" {
+            if let Some(next) = tokens.get(idx + 1) {
+                if let Ok(value) = next.parse::<u32>() {
+                    return Some(value);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn is_year_token(token: &str) -> bool {
+    if token.len() != 4 || !token.chars().all(|ch| ch.is_ascii_digit()) {
+        return false;
+    }
+    if let Ok(year) = token.parse::<i32>() {
+        return (1900..=2100).contains(&year);
+    }
+    false
 }
 
 async fn fetch_exa_tmdb_cover(
     title: &str,
     variants: &[String],
     media_type: &str,
+    media_label: &str,
     tmdb_api_key: &str,
     exa_api_key: &str,
     year_hint: Option<i32>,
@@ -3131,9 +4788,118 @@ async fn fetch_exa_tmdb_cover(
             if kind != media_type && media_type == "movie" && kind == "tv" {
                 // allow cross lookup for anime if needed
             }
-            if let Some(cover) = fetch_tmdb_cover_by_id(tmdb_api_key, &kind, id, None).await? {
+            if let Some(cover) =
+                fetch_tmdb_cover_by_id(tmdb_api_key, &kind, id, media_label, title).await?
+            {
                 return Ok(Some((cover, "tmdb-exa".to_string())));
             }
+        }
+    }
+    Ok(None)
+}
+
+async fn fetch_exa_tmdb_official_cover(
+    title: &str,
+    variants: &[String],
+    match_terms: &[String],
+    media_type: &str,
+    tmdb_api_key: &str,
+    exa_api_key: &str,
+    year_hint: Option<i32>,
+    require_english: bool,
+) -> Result<Option<CoverMeta>, String> {
+    let Some((kind, id)) =
+        fetch_exa_tmdb_id(title, variants, exa_api_key, year_hint).await?
+    else {
+        return Ok(None);
+    };
+    if kind != media_type {
+        return Ok(None);
+    }
+    let detail = fetch_tmdb_details(tmdb_api_key, &kind, id).await?;
+    let detail_title = detail
+        .title
+        .clone()
+        .or_else(|| detail.name.clone())
+        .unwrap_or_default();
+    let best_score = match_terms
+        .iter()
+        .map(|term| score_title_match(&detail_title, term))
+        .max()
+        .unwrap_or(0);
+    if best_score < 2 {
+        return Ok(None);
+    }
+    let matched_year = detail
+        .release_date
+        .as_deref()
+        .and_then(|value| value.split('-').next())
+        .and_then(|value| value.parse::<i32>().ok())
+        .or(detail
+            .first_air_date
+            .as_deref()
+            .and_then(|value| value.split('-').next())
+            .and_then(|value| value.parse::<i32>().ok()));
+    if let (Some(hint), Some(actual)) = (year_hint, matched_year) {
+        if (actual - hint).abs() > 1 {
+            return Ok(None);
+        }
+    }
+    let images = fetch_tmdb_images(tmdb_api_key, &kind, id).await?;
+    let selected = select_tmdb_poster(detail.poster_path.as_deref(), &images.posters, require_english);
+    let Some(poster) = selected else {
+        return Ok(None);
+    };
+    let year_diff = year_hint
+        .and_then(|target| matched_year.map(|value| (value - target).abs()))
+        .unwrap_or(999);
+    Ok(Some(CoverMeta {
+        cover_url: format!("https://image.tmdb.org/t/p/w500{}", poster.file_path),
+        source: "tmdb-exa".to_string(),
+        source_id: Some(format!("tmdb:{kind}:{id}")),
+        matched_title: Some(detail_title),
+        matched_year,
+        match_confidence: Some(calculate_match_confidence(best_score, year_diff)),
+        language: poster.iso_639_1.clone().or(Some("unknown".to_string())),
+        poster_type: Some("exa".to_string()),
+    }))
+}
+
+async fn fetch_exa_tmdb_id(
+    title: &str,
+    variants: &[String],
+    exa_api_key: &str,
+    year_hint: Option<i32>,
+) -> Result<Option<(String, u64)>, String> {
+    if exa_api_key.trim().is_empty() {
+        return Ok(None);
+    }
+    let year_label = year_hint.map(|value| value.to_string()).unwrap_or_default();
+    let query = format!(
+        "site:themoviedb.org {} {} {} poster",
+        title,
+        variants.get(0).cloned().unwrap_or_default(),
+        year_label
+    );
+    let payload = serde_json::json!({
+        "query": query,
+        "num_results": 5,
+        "type": "neural",
+    });
+    let resp = Client::new()
+        .post("https://api.exa.ai/search")
+        .header("Authorization", format!("Bearer {exa_api_key}"))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !resp.status().is_success() {
+        return Ok(None);
+    }
+    let data: ExaSearchResponse = resp.json().await.map_err(|err| err.to_string())?;
+    for result in data.results {
+        if let Some((kind, id)) = parse_tmdb_id_from_url(&result.url) {
+            return Ok(Some((kind, id)));
         }
     }
     Ok(None)
@@ -3170,20 +4936,27 @@ async fn fetch_tmdb_cover_by_id(
     tmdb_api_key: &str,
     media_type: &str,
     id: u64,
-    preferred_language: Option<&str>,
+    media_label: &str,
+    title: &str,
 ) -> Result<Option<String>, String> {
     let url = format!("https://api.themoviedb.org/3/{media_type}/{id}?api_key={tmdb_api_key}");
-    let resp = Client::new()
-        .get(url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
+    let resp = Client::new().get(url).send().await;
+    sleep(StdDuration::from_millis(100)).await;
+    let resp = resp.map_err(|err| err.to_string())?;
     if !resp.status().is_success() {
         return Ok(None);
     }
     let payload: TmdbResult = resp.json().await.map_err(|err| err.to_string())?;
-    if let Some(poster_path) =
-        fetch_tmdb_best_poster(tmdb_api_key, media_type, id, preferred_language).await?
+    let origin_country = tmdb_origin_country(&payload);
+    if let Some(poster_path) = fetch_tmdb_best_poster(
+        tmdb_api_key,
+        media_type,
+        id,
+        media_label,
+        title,
+        origin_country.as_deref(),
+    )
+    .await?
     {
         return Ok(Some(poster_path));
     }
@@ -3199,88 +4972,102 @@ async fn fetch_tmdb_best_poster(
     tmdb_api_key: &str,
     media_type: &str,
     id: u64,
-    preferred_language: Option<&str>,
+    media_label: &str,
+    title: &str,
+    origin_country: Option<&str>,
 ) -> Result<Option<String>, String> {
-    let url = format!("https://api.themoviedb.org/3/{media_type}/{id}/images?api_key={tmdb_api_key}");
-    let resp = Client::new()
-        .get(url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
+    let url =
+        format!("https://api.themoviedb.org/3/{media_type}/{id}/images?api_key={tmdb_api_key}");
+    let resp = Client::new().get(url).send().await;
+    sleep(StdDuration::from_millis(100)).await;
+    let resp = resp.map_err(|err| err.to_string())?;
     if !resp.status().is_success() {
         return Ok(None);
     }
     let payload: TmdbImagesResponse = resp.json().await.map_err(|err| err.to_string())?;
-    if let Some(file_path) = pick_tmdb_poster(&payload.posters, preferred_language) {
-        return Ok(Some(format!(
-            "https://image.tmdb.org/t/p/w500{file_path}"
-        )));
+    if let Some(file_path) = select_poster(&payload.posters, media_label, title, origin_country) {
+        return Ok(Some(format!("https://image.tmdb.org/t/p/w500{file_path}")));
     }
     Ok(None)
 }
 
-fn pick_tmdb_poster(posters: &[TmdbImage], preferred_language: Option<&str>) -> Option<String> {
+fn select_poster(
+    posters: &[TmdbImage],
+    media_label: &str,
+    title: &str,
+    origin_country: Option<&str>,
+) -> Option<String> {
     if posters.is_empty() {
         return None;
     }
 
-    let pick_best = |items: Vec<&TmdbImage>| -> Option<String> {
-        let mut best: Option<&TmdbImage> = None;
-        for item in items {
-            best = match best {
-                None => Some(item),
-                Some(current) => {
-                    let current_votes = current.vote_count.unwrap_or(0);
-                    let item_votes = item.vote_count.unwrap_or(0);
-                    if item_votes > current_votes {
-                        Some(item)
-                    } else if item_votes == current_votes {
-                        let current_avg = current.vote_average.unwrap_or(0.0);
-                        let item_avg = item.vote_average.unwrap_or(0.0);
-                        if item_avg > current_avg {
-                            Some(item)
-                        } else {
-                            Some(current)
-                        }
-                    } else {
-                        Some(current)
-                    }
-                }
-            };
-        }
-        best.map(|item| item.file_path.clone())
-    };
+    let label = media_label.to_lowercase();
+    let normalized_title = normalize_title_for_match(title);
 
-    let with_votes: Vec<&TmdbImage> = posters
+    if label == "anime" {
+        if normalized_title.starts_with("cowboy bebop") {
+            return select_by_language(posters, "ja");
+        }
+        return select_by_language(posters, "en");
+    }
+
+    if let Some(country) = origin_country {
+        let lang = country_to_language(country);
+        return select_by_language(posters, lang);
+    }
+
+    select_by_language(posters, "en")
+}
+
+fn select_by_language(posters: &[TmdbImage], lang: &str) -> Option<String> {
+    let matching: Vec<&TmdbImage> = posters
         .iter()
+        .filter(|poster| poster.iso_639_1.as_deref() == Some(lang))
         .filter(|poster| poster.vote_count.unwrap_or(0) > 0)
         .collect();
 
-    if let Some(lang) = preferred_language {
-        let lang_matches: Vec<&TmdbImage> = with_votes
-            .iter()
-            .copied()
-            .filter(|poster| poster.iso_639_1.as_deref() == Some(lang))
-            .collect();
-        if let Some(best) = pick_best(lang_matches) {
-            return Some(best);
+    if let Some(best) = matching
+        .iter()
+        .max_by_key(|poster| poster.vote_count.unwrap_or(0))
+    {
+        return Some(best.file_path.clone());
+    }
+
+    posters
+        .iter()
+        .filter(|poster| poster.vote_count.unwrap_or(0) > 0)
+        .max_by_key(|poster| poster.vote_count.unwrap_or(0))
+        .map(|poster| poster.file_path.clone())
+}
+
+fn country_to_language(country: &str) -> &str {
+    match country.trim().to_uppercase().as_str() {
+        "KR" => "ko",
+        "JP" => "ja",
+        "FR" => "fr",
+        "DE" => "de",
+        "ES" => "es",
+        "IT" => "it",
+        _ => "en",
+    }
+}
+
+fn tmdb_origin_country(payload: &TmdbResult) -> Option<String> {
+    if let Some(countries) = payload.origin_country.as_ref() {
+        if let Some(country) = countries.first() {
+            if !country.trim().is_empty() {
+                return Some(country.trim().to_string());
+            }
         }
     }
-
-    let english_matches: Vec<&TmdbImage> = with_votes
-        .iter()
-        .copied()
-        .filter(|poster| poster.iso_639_1.as_deref() == Some("en"))
-        .collect();
-    if let Some(best) = pick_best(english_matches) {
-        return Some(best);
+    if let Some(countries) = payload.production_countries.as_ref() {
+        if let Some(country) = countries.first() {
+            if !country.iso_3166_1.trim().is_empty() {
+                return Some(country.iso_3166_1.trim().to_string());
+            }
+        }
     }
-
-    if let Some(best) = pick_best(with_votes) {
-        return Some(best);
-    }
-
-    posters.first().map(|poster| poster.file_path.clone())
+    None
 }
 
 async fn fetch_open_library_cover(title: &str) -> Result<Option<(String, String)>, String> {
@@ -3309,6 +5096,22 @@ async fn fetch_open_library_cover(title: &str) -> Result<Option<(String, String)
     Ok(None)
 }
 
+async fn fetch_open_library_official_cover(title: &str) -> Result<Option<CoverMeta>, String> {
+    if let Some((cover_url, source)) = fetch_open_library_cover(title).await? {
+        return Ok(Some(CoverMeta {
+            cover_url,
+            source,
+            source_id: None,
+            matched_title: None,
+            matched_year: None,
+            match_confidence: Some(0.9),
+            language: Some("en".to_string()),
+            poster_type: Some("book".to_string()),
+        }));
+    }
+    Ok(None)
+}
+
 async fn fetch_igdb_token(client_id: &str, client_secret: &str) -> Result<String, String> {
     let url = format!(
         "https://id.twitch.tv/oauth2/token?client_id={client_id}&client_secret={client_secret}&grant_type=client_credentials"
@@ -3324,6 +5127,95 @@ async fn fetch_igdb_token(client_id: &str, client_secret: &str) -> Result<String
     }
     let payload: IgdbTokenResponse = resp.json().await.map_err(|err| err.to_string())?;
     Ok(payload.access_token)
+}
+
+async fn fetch_igdb_official_cover(
+    title: &str,
+    year_hint: Option<i32>,
+    client_id: Option<&str>,
+    access_token: &str,
+) -> Result<Option<CoverMeta>, String> {
+    let Some(client_id) = client_id else {
+        return Ok(None);
+    };
+    if client_id.trim().is_empty() || access_token.trim().is_empty() {
+        return Ok(None);
+    }
+    let variants = game_title_variants(title);
+    let mut candidates: Vec<IgdbCandidateV2> = Vec::new();
+
+    for variant in &variants {
+        let body = format!(
+            "search \"{}\"; fields id, name, first_release_date, cover.image_id; limit 10;",
+            variant.replace('\"', "")
+        );
+        let resp = Client::new()
+            .post("https://api.igdb.com/v4/games")
+            .header("Client-ID", client_id)
+            .header("Authorization", format!("Bearer {access_token}"))
+            .body(body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())?;
+        if !resp.status().is_success() {
+            continue;
+        }
+        let results: Vec<IgdbGameResult> = resp.json().await.map_err(|err| err.to_string())?;
+        for result in results {
+            let Some(cover) = result.cover else {
+                continue;
+            };
+            let name = result.name.unwrap_or_default();
+            if name.trim().is_empty() {
+                continue;
+            }
+            let year = result.first_release_date.and_then(igdb_year_from_timestamp);
+            let title_score = score_title_match(&name, title);
+            let year_diff = year_hint
+                .and_then(|target| year.map(|value| (value - target).abs()))
+                .unwrap_or(999);
+            let confidence = calculate_match_confidence(title_score, year_diff);
+            candidates.push(IgdbCandidateV2 {
+                id: result.id.unwrap_or_default(),
+                name,
+                year,
+                cover,
+                title_score,
+                year_diff,
+                match_confidence: confidence,
+            });
+        }
+    }
+
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+
+    candidates.sort_by(|a, b| {
+        b.title_score
+            .cmp(&a.title_score)
+            .then_with(|| a.year_diff.cmp(&b.year_diff))
+    });
+
+    let top = &candidates[0];
+    if top.title_score == 0 {
+        return Ok(None);
+    }
+
+    let cover_url = format!(
+        "https://images.igdb.com/igdb/image/upload/t_cover_big/{}.jpg",
+        top.cover.image_id
+    );
+    Ok(Some(CoverMeta {
+        cover_url,
+        source: "igdb".to_string(),
+        source_id: Some(format!("igdb:{}", top.id)),
+        matched_title: Some(top.name.clone()),
+        matched_year: top.year,
+        match_confidence: Some(top.match_confidence),
+        language: Some("en".to_string()),
+        poster_type: Some("box_art".to_string()),
+    }))
 }
 
 async fn fetch_igdb_cover(
@@ -3366,9 +5258,7 @@ async fn fetch_igdb_cover(
             if name.trim().is_empty() {
                 continue;
             }
-            let year = result
-                .first_release_date
-                .and_then(igdb_year_from_timestamp);
+            let year = result.first_release_date.and_then(igdb_year_from_timestamp);
             let score = score_igdb_candidate(&name, &variants, year_hint, year);
             candidates.push(IgdbCandidate {
                 name,
@@ -3407,12 +5297,55 @@ async fn fetch_igdb_cover(
     Ok(Some((cover_url, "igdb".to_string())))
 }
 
+async fn fetch_youtube_official_thumbnail(
+    youtube_id: Option<&str>,
+    url: Option<&str>,
+) -> Result<Option<CoverMeta>, String> {
+    let id = youtube_id
+        .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
+        .or_else(|| url.and_then(extract_youtube_id));
+    let Some(video_id) = id else {
+        return Ok(None);
+    };
+    let client = Client::builder()
+        .timeout(StdDuration::from_secs(5))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let maxres = format!("https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg");
+    let hq = format!("https://i.ytimg.com/vi/{video_id}/hqdefault.jpg");
+    let url = match client.head(&maxres).send().await {
+        Ok(resp) if resp.status().is_success() => maxres,
+        _ => hq,
+    };
+    Ok(Some(CoverMeta {
+        cover_url: url,
+        source: "youtube".to_string(),
+        source_id: Some(format!("youtube:{video_id}")),
+        matched_title: None,
+        matched_year: None,
+        match_confidence: Some(1.0),
+        language: Some("en".to_string()),
+        poster_type: Some("thumbnail".to_string()),
+    }))
+}
+
 #[derive(Debug)]
 struct IgdbCandidate {
     name: String,
     year: Option<i32>,
     cover: IgdbCover,
     score: i32,
+}
+
+#[derive(Debug)]
+struct IgdbCandidateV2 {
+    id: i64,
+    name: String,
+    year: Option<i32>,
+    cover: IgdbCover,
+    title_score: i32,
+    year_diff: i32,
+    match_confidence: f64,
 }
 
 fn igdb_year_from_timestamp(value: i64) -> Option<i32> {

@@ -4,5 +4,25 @@
   <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>CodexMonitor needs microphone access for voice input features.</string>
+
+    <!-- File/folder access descriptions -->
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>CodexMonitor needs access to the Desktop folder for workspace file operations.</string>
+
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>CodexMonitor needs access to the Documents folder for workspace file operations.</string>
+
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>CodexMonitor needs access to the Downloads folder for workspace file operations.</string>
+
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>CodexMonitor needs access to external volumes for workspace file operations.</string>
+
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>CodexMonitor needs access to network volumes for workspace file operations.</string>
+
+    <!-- Suppress macOS file access prompts by declaring app is not sandboxed -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
   </dict>
 </plist>

@@ -65,6 +65,7 @@ export interface DeliveryOrder {
   id: string;
   startedAt: string;
   merchantName: string;
+  logoUrl?: string;
   payout: number;
   miles?: number;
   durationMinutes?: number;
@@ -76,6 +77,7 @@ export interface DeliveryOrder {
 
 export interface MerchantStats {
   merchantName: string;
+  logoUrl?: string;
   orderCount: number;
   totalEarnings: number;
   avgPayout: number;
@@ -110,6 +112,11 @@ export interface MealEntry {
   mealType: "breakfast" | "lunch" | "dinner" | "snack";
   description: string;
   foods: string[];
+  imageUrl?: string;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  fiber?: number;
   estimatedCalories?: number;
 }
 
@@ -162,6 +169,7 @@ export interface ExerciseDashboard {
 export interface Bill {
   id: string;
   name: string;
+  logoUrl?: string;
   amount: number;
   dueDay: number;
   frequency: "monthly" | "weekly" | "annual";
@@ -203,6 +211,8 @@ export interface MediaItem {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  year?: number;
+  notes?: string;
 }
 
 export interface MediaLibrary {
@@ -227,6 +237,18 @@ export interface MediaCoverSummary {
   found: number;
   skipped: number;
   failed: number;
+}
+
+export interface FixCoversResult {
+  fixed: number;
+  already_valid: number;
+  failed: string[];
+}
+
+export interface CoverRebuildResult {
+  total: number;
+  rebuilt: number;
+  failed: string[];
 }
 
 export interface CoverOverride {

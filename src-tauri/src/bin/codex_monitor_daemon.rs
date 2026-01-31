@@ -1210,6 +1210,62 @@ impl DaemonState {
         serde_json::to_value(summary).map_err(|err| err.to_string())
     }
 
+    async fn fix_broken_covers(&self, workspace_id: String) -> Result<Value, String> {
+        let workspaces = self.workspaces.lock().await;
+        let entry = workspaces
+            .get(&workspace_id)
+            .cloned()
+            .ok_or("workspace not found")?;
+        let settings = self.app_settings.lock().await;
+        let tmdb_key = resolve_api_key(settings.tmdb_api_key.as_str(), "TMDB_API_KEY");
+        let igdb_client_id = resolve_api_key(settings.igdb_client_id.as_str(), "IGDB_CLIENT_ID");
+        let igdb_client_secret =
+            resolve_api_key(settings.igdb_client_secret.as_str(), "IGDB_CLIENT_SECRET");
+        let exa_api_key = if !settings.exa_api_key.trim().is_empty() {
+            Some(settings.exa_api_key.clone())
+        } else {
+            resolve_api_key("", "EXA_API_KEY")
+        };
+        let summary = life::fix_broken_covers(
+            &entry.path,
+            entry.settings.obsidian_root.as_deref(),
+            tmdb_key.as_deref(),
+            igdb_client_id.as_deref(),
+            igdb_client_secret.as_deref(),
+            exa_api_key.as_deref(),
+        )
+        .await?;
+        serde_json::to_value(summary).map_err(|err| err.to_string())
+    }
+
+    async fn rebuild_media_covers(&self, workspace_id: String) -> Result<Value, String> {
+        let workspaces = self.workspaces.lock().await;
+        let entry = workspaces
+            .get(&workspace_id)
+            .cloned()
+            .ok_or("workspace not found")?;
+        let settings = self.app_settings.lock().await;
+        let tmdb_key = resolve_api_key(settings.tmdb_api_key.as_str(), "TMDB_API_KEY");
+        let igdb_client_id = resolve_api_key(settings.igdb_client_id.as_str(), "IGDB_CLIENT_ID");
+        let igdb_client_secret =
+            resolve_api_key(settings.igdb_client_secret.as_str(), "IGDB_CLIENT_SECRET");
+        let exa_api_key = if !settings.exa_api_key.trim().is_empty() {
+            Some(settings.exa_api_key.clone())
+        } else {
+            resolve_api_key("", "EXA_API_KEY")
+        };
+        let summary = life::rebuild_media_covers(
+            &entry.path,
+            entry.settings.obsidian_root.as_deref(),
+            tmdb_key.as_deref(),
+            igdb_client_id.as_deref(),
+            igdb_client_secret.as_deref(),
+            exa_api_key.as_deref(),
+        )
+        .await?;
+        serde_json::to_value(summary).map_err(|err| err.to_string())
+    }
+
     async fn get_finance_dashboard(
         &self,
         workspace_id: String,
@@ -5090,6 +5146,14 @@ async fn handle_rpc_request(
                 .and_then(|value| value.as_bool())
                 .unwrap_or(false);
             state.enrich_media_covers(workspace_id, force).await
+        }
+        "fix_broken_covers" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            state.fix_broken_covers(workspace_id).await
+        }
+        "rebuild_media_covers" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            state.rebuild_media_covers(workspace_id).await
         }
         "get_finance_dashboard" => {
             let workspace_id = parse_string(&params, "workspaceId")?;

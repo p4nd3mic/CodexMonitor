@@ -19,6 +19,8 @@ import type {
   FinanceDashboard,
   MediaLibrary,
   MediaCoverSummary,
+  FixCoversResult,
+  CoverRebuildResult,
   LifeTimeRange,
   NutritionDashboard,
   YouTubeLibrary,
@@ -154,6 +156,25 @@ export async function enrichMediaCovers(
   force = false,
 ): Promise<MediaCoverSummary> {
   return invoke<MediaCoverSummary>("enrich_media_covers", { workspaceId, force });
+}
+
+export async function fixBrokenCovers(
+  workspaceId: string,
+): Promise<FixCoversResult> {
+  return invoke<FixCoversResult>("fix_broken_covers", { workspaceId });
+}
+
+export async function rebuildMediaCovers(
+  workspaceId: string,
+): Promise<CoverRebuildResult> {
+  return invoke<CoverRebuildResult>("rebuild_media_covers", { workspaceId });
+}
+
+export async function refetchMediaCover(
+  workspaceId: string,
+  mediaId: string,
+): Promise<string | null> {
+  return invoke<string | null>("refetch_media_cover", { workspaceId, mediaId });
 }
 
 export async function addWorkspace(

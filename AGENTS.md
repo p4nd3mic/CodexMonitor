@@ -53,6 +53,13 @@ Run Codex from iPhone/iPad while away from Mac. The daemon runs on Mac Mini, iOS
 - **Codex responses nested**: many RPC methods return `result.result`
 - **iOS always requires auth**: won't connect to `--insecure-no-auth` daemon
 - **Update ALL types together**: TS + Swift + Rust when changing models
+- **Settings file path (macOS app)**: `~/Library/Application Support/com.dimillian.codexmonitor/settings.json` (matches `tauri.conf.json` identifier)
+
+## 🖥️ Desktop App Launch (macOS)
+- **Build release app**: `npm run tauri:build`
+- **Open release app (detached)**:
+  - `open "/Volumes/YouTube 4TB/CodexMonitor/src-tauri/target/release/bundle/macos/CodexMonitor.app"`
+- **Why**: launching via dev server/terminal can close when the session ends. Use `open` on the built app to keep it running.
 
 ---
 

@@ -160,6 +160,81 @@ airtable_id: "rec122gzCM7YlNaJT"         # Legacy migration ID (OPTIONAL — fro
 ---
 ```
 
+## 🎯 Poster / Cover Accuracy — REQUIRED BEHAVIOR
+
+**Never guess** if the data isn't sufficient to disambiguate the correct poster.
+If there is ambiguity (remakes, regional releases, sequels, spin‑offs), **ask the user** before selecting a poster.
+
+### Ask the user when any of these are missing or unclear:
+- **Year** (remakes exist)
+- **Region / original market** (US vs Korean vs Japanese)
+- **Version** (original vs remake vs reboot)
+- **Season vs movie** (TV vs film adaptation)
+
+### Example prompt to user
+> "This title has multiple versions. Which one do you want?"
+> Provide 2–3 options (year + region), then wait for confirmation.
+
+**If unsure → ask. Do NOT auto‑apply a poster.**
+
+---
+
+## 🖼️ Cover Art Fetching
+
+When logging new media (watched, playing, added to backlog), automatically fetch cover art.
+
+### Lookup Order
+1. Check `media.covers.overrides.json` — if entry exists, use it (user manually corrected)
+2. Check `media.covers.ai-fixed.json` — if entry exists, use it (AI-corrected poster)
+3. Fetch from API and cache in `media.covers.v1.json`
+
+### API by Type
+| Type | API | Notes |
+|------|-----|-------|
+| Film / TV / Anime | TMDB | Use `origin_country` for language detection |
+| Game | IGDB | Requires Twitch OAuth |
+| Book | OpenLibrary | ISBN lookup preferred |
+
+### Poster Language Rules
+| Content Type | Poster Language |
+|--------------|-----------------|
+| Foreign films | Original language poster |
+| American films | English poster |
+| Anime | English/American poster |
+| **Exception:** Cowboy Bebop | Japanese poster |
+
+### Detection Logic
+- Use TMDB's `origin_country` field to determine if foreign
+- For anime, check `genres` array for anime/animation tags
+- If `origin_country` includes "US" → English poster
+- If `origin_country` is "JP" + anime genre → English poster (except Cowboy Bebop)
+- Otherwise → original language poster
+
+### Process
+1. Search API with title (+ year if known for disambiguation)
+2. Pick most popular result (`highest vote_count` on TMDB)
+3. Select poster matching language rules above
+4. Store in cache with this structure:
+
+```json
+{
+  "UUID": {
+    "coverUrl": "https://image.tmdb.org/t/p/w500/...",
+    "source": "auto",
+    "api": "tmdb",
+    "tmdbId": 12345,
+    "updatedAt": "2026-01-28T12:00:00Z"
+  }
+}
+```
+
+### Cache Files (in `Indexes/`)
+| File | Purpose |
+|------|---------|
+| `media.covers.v1.json` | Auto-fetched covers (primary cache) |
+| `media.covers.ai-fixed.json` | AI-corrected covers (wrong auto-fetch) |
+| `media.covers.overrides.json` | User manual overrides (highest priority) |
+
 ### Body Structure
 
 ```markdown

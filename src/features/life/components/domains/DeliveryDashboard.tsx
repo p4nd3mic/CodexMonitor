@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { LifeTimeRange } from "../../types";
 import { useDeliveryDashboard } from "../../hooks/useDeliveryDashboard";
 import { TimeRangeSelector } from "../shared/TimeRangeSelector";
+import { MerchantCard } from "../shared/MerchantCard";
 
 type DeliveryDashboardProps = {
   workspaceId: string | null;
@@ -131,14 +132,9 @@ export function DeliveryDashboard({
           <section className="life-section">
             <div className="life-section-title">Top Merchants</div>
             {topMerchants.length ? (
-              <div className="life-merchant-grid">
+              <div className="visual-card-grid">
                 {topMerchants.map((merchant) => (
-                  <div key={merchant.merchantName} className="life-card">
-                    <div className="life-merchant-name">{merchant.merchantName}</div>
-                    <div className="life-merchant-meta">
-                      {merchant.orderCount} orders · ${merchant.totalEarnings.toFixed(2)}
-                    </div>
-                  </div>
+                  <MerchantCard key={merchant.merchantName} {...merchant} />
                 ))}
               </div>
             ) : (
@@ -149,14 +145,25 @@ export function DeliveryDashboard({
           <section className="life-section">
             <div className="life-section-title">Recent Orders</div>
             {recentOrders.length ? (
-              <div className="life-list">
+              <div className="visual-card-grid">
                 {recentOrders.map((order) => (
-                  <div key={order.id} className="life-card">
-                    <div className="life-list-title">{order.merchantName}</div>
-                    <div className="life-list-meta">
-                      {order.startedAt.slice(11, 16)} · ${order.payout.toFixed(2)}
-                      {order.miles ? ` · ${order.miles.toFixed(1)} mi` : ""}
-                      {order.platform ? ` · ${order.platform}` : ""}
+                  <div key={order.id} className="order-card">
+                    <div className="order-card__logo">
+                      {order.logoUrl ? (
+                        <img src={order.logoUrl} alt={order.merchantName} />
+                      ) : (
+                        <div className="order-card__avatar">
+                          {getInitials(order.merchantName)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="order-card__body">
+                      <div className="order-card__title">{order.merchantName}</div>
+                      <div className="order-card__meta">
+                        {order.startedAt.slice(11, 16)} · ${order.payout.toFixed(2)}
+                        {order.miles ? ` · ${order.miles.toFixed(1)} mi` : ""}
+                        {order.platform ? ` · ${order.platform}` : ""}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -169,4 +176,13 @@ export function DeliveryDashboard({
       ) : null}
     </div>
   );
+}
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
 }

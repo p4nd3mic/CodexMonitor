@@ -4703,31 +4703,35 @@ pub enum TimeRange {
 
 ```ts
 export type DeliveryDashboard = {
-  stats: {
-    totalEarnings: number;
-    orderCount: number;
-    activeHours: number;
-    hourlyRate: number;
-    perMileRate: number;
-  };
+  meta: DashboardMeta;
+  stats: DeliveryStats;
   orders: DeliveryOrder[];
   topMerchants: MerchantStats[];
-  timeRange: string;
 };
 
 export type DeliveryOrder = {
   id: string;
-  merchant: string;
-  earnings: number;
-  miles: number;
-  timestamp: number;
+  startedAt: string;
+  merchantName: string;
+  logoUrl?: string;
+  payout: number;
+  miles?: number;
+  durationMinutes?: number;
+  platform?: string;
+  notes?: string;
+  rewardTag?: string;
+  warningTag?: string;
 };
 
 export type MerchantStats = {
-  name: string;
+  merchantName: string;
+  logoUrl?: string;
   orderCount: number;
-  avgEarnings: number;
-  avgWaitTime: number;
+  totalEarnings: number;
+  avgPayout: number;
+  avgMiles?: number;
+  avgPerMile?: number;
+  tier?: string;
 };
 ```
 
@@ -4735,33 +4739,48 @@ export type MerchantStats = {
 
 ```swift
 public struct DeliveryDashboard: Codable, Sendable {
+    public var meta: DashboardMeta
     public var stats: DeliveryStats
     public var orders: [DeliveryOrder]
     public var topMerchants: [MerchantStats]
-    public var timeRange: String
 }
 
 public struct DeliveryStats: Codable, Sendable {
     public var totalEarnings: Double
     public var orderCount: Int
     public var activeHours: Double
+    public var totalMiles: Double?
     public var hourlyRate: Double
     public var perMileRate: Double
+    public var avgOrderValue: Double?
+    public var startingAr: Double?
+    public var endingAr: Double?
+    public var whaleCatches: Int?
 }
 
 public struct DeliveryOrder: Codable, Identifiable, Sendable {
     public var id: String
-    public var merchant: String
-    public var earnings: Double
-    public var miles: Double
-    public var timestamp: Double
+    public var startedAt: String
+    public var merchantName: String
+    public var logoUrl: String?
+    public var payout: Double
+    public var miles: Double?
+    public var durationMinutes: Double?
+    public var platform: String?
+    public var notes: String?
+    public var rewardTag: String?
+    public var warningTag: String?
 }
 
 public struct MerchantStats: Codable, Sendable {
-    public var name: String
+    public var merchantName: String
+    public var logoUrl: String?
     public var orderCount: Int
-    public var avgEarnings: Double
-    public var avgWaitTime: Double
+    public var totalEarnings: Double
+    public var avgPayout: Double
+    public var avgMiles: Double?
+    public var avgPerMile: Double?
+    public var tier: String?
 }
 ```
 
@@ -4798,44 +4817,33 @@ pub struct DeliveryDashboard {
 
 ```ts
 export type NutritionDashboard = {
-  today: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fat: number;
-    fiber: number;
-    meals: MealEntry[];
-  };
-  targets: NutritionTargets;
-  weeklyTrend: DailyNutrition[];
+  meta: DashboardMeta;
+  stats: NutritionStats;
+  meals: MealEntry[];
+  weeklyTrend?: Record<string, number>;
+};
+
+export type NutritionStats = {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber?: number;
+  mealCount: number;
 };
 
 export type MealEntry = {
   id: string;
-  name: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  timestamp: number;
-};
-
-export type NutritionTargets = {
-  calories: { min: number; max: number };
-  protein: { min: number; max: number };
-  carbs: { min: number; max: number };
-  fat: { min: number; max: number };
-  fiber: number;
-};
-
-export type DailyNutrition = {
-  date: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  fiber: number;
-  mealsLogged: number;
+  timestamp: string;
+  mealType: string;
+  description: string;
+  foods: string[];
+  imageUrl?: string;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  fiber?: number;
+  estimatedCalories?: number;
 };
 ```
 
@@ -4843,28 +4851,33 @@ export type DailyNutrition = {
 
 ```swift
 public struct NutritionDashboard: Codable, Sendable {
-    public var today: DailyNutritionDetail
-    public var targets: NutritionTargets
-    public var weeklyTrend: [DailyNutrition]
+    public var meta: DashboardMeta
+    public var stats: NutritionStats
+    public var meals: [MealEntry]
+    public var weeklyTrend: [String: Double]?
 }
 
-public struct DailyNutritionDetail: Codable, Sendable {
+public struct NutritionStats: Codable, Sendable {
     public var calories: Double
     public var protein: Double
     public var carbs: Double
     public var fat: Double
-    public var fiber: Double
-    public var meals: [MealEntry]
+    public var fiber: Double?
+    public var mealCount: Int
 }
 
 public struct MealEntry: Codable, Identifiable, Sendable {
     public var id: String
-    public var name: String
-    public var calories: Double
-    public var protein: Double
-    public var carbs: Double
-    public var fat: Double
-    public var timestamp: Double
+    public var timestamp: String
+    public var mealType: String
+    public var description: String
+    public var foods: [String]
+    public var imageUrl: String?
+    public var protein: Double?
+    public var carbs: Double?
+    public var fat: Double?
+    public var fiber: Double?
+    public var estimatedCalories: Double?
 }
 ```
 
@@ -5081,26 +5094,29 @@ pub struct YouTubeDashboard {
 
 ```ts
 export type FinanceDashboard = {
-  upcomingBills: Bill[];
+  meta: DashboardMeta;
+  stats: FinanceStats;
+  bills: Bill[];
+  byCategory: Record<string, number>;
+  statusMessage?: string;
+};
+
+export type FinanceStats = {
   monthlyTotal: number;
-  paidThisMonth: number;
-  remainingThisMonth: number;
-  calendarView: BillCalendarDay[];
+  dueSoonCount: number;
+  autoPayCount: number;
 };
 
 export type Bill = {
   id: string;
   name: string;
+  logoUrl?: string;
   amount: number;
   dueDay: number;
-  isPaid: boolean;
+  frequency: string;
   category: string;
-};
-
-export type BillCalendarDay = {
-  date: string;
-  bills: Bill[];
-  totalDue: number;
+  autoPay: boolean;
+  nextDueDate: string;
 };
 ```
 
@@ -5108,26 +5124,29 @@ export type BillCalendarDay = {
 
 ```swift
 public struct FinanceDashboard: Codable, Sendable {
-    public var upcomingBills: [Bill]
+    public var meta: DashboardMeta
+    public var stats: FinanceStats
+    public var bills: [Bill]
+    public var byCategory: [String: Double]
+    public var statusMessage: String?
+}
+
+public struct FinanceStats: Codable, Sendable {
     public var monthlyTotal: Double
-    public var paidThisMonth: Double
-    public var remainingThisMonth: Double
-    public var calendarView: [BillCalendarDay]
+    public var dueSoonCount: Int
+    public var autoPayCount: Int
 }
 
 public struct Bill: Codable, Identifiable, Sendable {
     public var id: String
     public var name: String
+    public var logoUrl: String?
     public var amount: Double
     public var dueDay: Int
-    public var isPaid: Bool
+    public var frequency: String
     public var category: String
-}
-
-public struct BillCalendarDay: Codable, Sendable {
-    public var date: String
-    public var bills: [Bill]
-    public var totalDue: Double
+    public var autoPay: Bool
+    public var nextDueDate: String
 }
 ```
 
@@ -5135,16 +5154,38 @@ public struct BillCalendarDay: Codable, Sendable {
 
 ```rust
 pub struct FinanceDashboard {
-    #[serde(rename = "upcomingBills")]
-    pub upcoming_bills: Vec<Bill>,
+    pub meta: DashboardMeta,
+    pub stats: FinanceStats,
+    pub bills: Vec<Bill>,
+    #[serde(rename = "byCategory")]
+    pub by_category: std::collections::HashMap<String, f64>,
+    #[serde(rename = "statusMessage", skip_serializing_if = "Option::is_none")]
+    pub status_message: Option<String>,
+}
+
+pub struct FinanceStats {
     #[serde(rename = "monthlyTotal")]
     pub monthly_total: f64,
-    #[serde(rename = "paidThisMonth")]
-    pub paid_this_month: f64,
-    #[serde(rename = "remainingThisMonth")]
-    pub remaining_this_month: f64,
-    #[serde(rename = "calendarView")]
-    pub calendar_view: Vec<BillCalendarDay>,
+    #[serde(rename = "dueSoonCount")]
+    pub due_soon_count: i32,
+    #[serde(rename = "autoPayCount")]
+    pub auto_pay_count: i32,
+}
+
+pub struct Bill {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "logoUrl", skip_serializing_if = "Option::is_none")]
+    pub logo_url: Option<String>,
+    pub amount: f64,
+    #[serde(rename = "dueDay")]
+    pub due_day: i32,
+    pub frequency: String,
+    pub category: String,
+    #[serde(rename = "autoPay")]
+    pub auto_pay: bool,
+    #[serde(rename = "nextDueDate")]
+    pub next_due_date: String,
 }
 ```
 

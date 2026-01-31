@@ -1,6 +1,7 @@
-import type { Bill, LifeTimeRange } from "../../types";
+import type { LifeTimeRange } from "../../types";
 import { useFinanceDashboard } from "../../hooks/useFinanceDashboard";
 import { TimeRangeSelector } from "../shared/TimeRangeSelector";
+import { BillCard } from "../shared/BillCard";
 
 type FinanceDashboardProps = {
   workspaceId: string | null;
@@ -86,9 +87,9 @@ export function FinanceDashboard({
           <section className="life-section">
             <div className="life-section-title">Upcoming Bills</div>
             {bills.length ? (
-              <div className="life-list">
+              <div className="visual-card-grid">
                 {bills.map((bill) => (
-                  <BillRow key={bill.id} bill={bill} />
+                  <BillCard key={bill.id} {...bill} />
                 ))}
               </div>
             ) : (
@@ -106,26 +107,6 @@ export function FinanceDashboard({
           </section>
         </>
       ) : null}
-    </div>
-  );
-}
-
-function BillRow({ bill }: { bill: Bill }) {
-  const dueDate = formatShortDate(bill.nextDueDate);
-  const dueSoon = isDueSoon(bill.nextDueDate);
-  const daysRemaining = daysUntil(bill.nextDueDate);
-  return (
-    <div className="finance-bill-row">
-      <span className={`finance-bill-dot${dueSoon ? " is-due-soon" : ""}`} />
-      <div>
-        <div className="life-list-title">
-          {dueDate} {bill.autoPay ? "🔄" : "•"} {bill.name}
-        </div>
-        <div className="finance-bill-meta">
-          {formatCurrency(bill.amount)} · {bill.frequency}
-          {daysRemaining !== null ? ` · ${daysRemaining}d` : ""}
-        </div>
-      </div>
     </div>
   );
 }
@@ -159,12 +140,6 @@ function formatCurrency(value: number) {
   });
 }
 
-function formatShortDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 function isDueSoon(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return false;
@@ -172,12 +147,4 @@ function isDueSoon(value: string) {
   const diff = date.getTime() - now.getTime();
   const days = diff / (1000 * 60 * 60 * 24);
   return days >= 0 && days <= 7;
-}
-
-function daysUntil(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const now = new Date();
-  const diff = date.getTime() - now.getTime();
-  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }

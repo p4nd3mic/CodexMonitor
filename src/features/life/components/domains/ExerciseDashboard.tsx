@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { ExerciseEntry, LifeTimeRange } from "../../types";
 import { useExerciseDashboard } from "../../hooks/useExerciseDashboard";
 import { TimeRangeSelector } from "../shared/TimeRangeSelector";
+import { ActivityCard } from "../shared/ActivityCard";
 
 const TYPE_EMOJI: Record<ExerciseEntry["type"], string> = {
   walk: "🚶",
@@ -159,18 +160,9 @@ export function ExerciseDashboard({
           <section className="life-section">
             <div className="life-section-title">{activityTitle}</div>
             {entries.length ? (
-              <div className="life-list">
+              <div className="visual-card-grid">
                 {entries.map((entry) => (
-                  <div key={entry.id} className="life-card">
-                    <div className="life-list-title">
-                      {TYPE_EMOJI[entry.type]} {entry.description}
-                    </div>
-                    <div className="life-list-meta">
-                      {formatEntryTime(entry.timestamp)}
-                      {entry.miles ? ` • ${entry.miles.toFixed(1)} mi` : ""}
-                      {entry.duration ? ` • ${entry.duration.toFixed(0)} min` : ""}
-                    </div>
-                  </div>
+                  <ActivityCard key={entry.id} {...entry} />
                 ))}
               </div>
             ) : (
@@ -217,11 +209,4 @@ export function ExerciseDashboard({
       ) : null}
     </div>
   );
-}
-
-function formatEntryTime(timestamp: string) {
-  if (timestamp.length >= 16) {
-    return timestamp.slice(11, 16);
-  }
-  return timestamp;
 }

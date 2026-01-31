@@ -1,15 +1,9 @@
 import { useMemo } from "react";
-import type { LifeTimeRange, MealEntry } from "../../types";
+import type { LifeTimeRange } from "../../types";
 import { NUTRITION_GOALS } from "../../types";
 import { useNutritionDashboard } from "../../hooks/useNutritionDashboard";
 import { TimeRangeSelector } from "../shared/TimeRangeSelector";
-
-const MEAL_EMOJI: Record<MealEntry["mealType"], string> = {
-  breakfast: "🌅",
-  lunch: "🌞",
-  dinner: "🌙",
-  snack: "🍪",
-};
+import { FoodCard } from "../shared/FoodCard";
 
 type NutritionDashboardProps = {
   workspaceId: string | null;
@@ -151,19 +145,9 @@ export function NutritionDashboard({
           <section className="life-section">
             <div className="life-section-title">{mealTitle}</div>
             {meals.length ? (
-              <div className="life-list">
+              <div className="visual-card-grid">
                 {meals.map((meal) => (
-                  <div key={meal.id} className="life-card">
-                    <div className="life-list-title">
-                      {MEAL_EMOJI[meal.mealType]} {meal.description}
-                    </div>
-                    <div className="life-list-meta">
-                      {formatMealTime(meal.timestamp)}
-                      {meal.estimatedCalories !== undefined
-                        ? ` • ${meal.estimatedCalories.toFixed(0)} cal`
-                        : ""}
-                    </div>
-                  </div>
+                  <FoodCard key={meal.id} {...meal} />
                 ))}
               </div>
             ) : (
@@ -196,13 +180,6 @@ export function NutritionDashboard({
       ) : null}
     </div>
   );
-}
-
-function formatMealTime(timestamp: string) {
-  if (timestamp.length >= 16) {
-    return timestamp.slice(11, 16);
-  }
-  return timestamp;
 }
 
 function formatShortDate(value: string) {
