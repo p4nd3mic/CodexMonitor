@@ -1513,8 +1513,11 @@ pub async fn rebuild_media_covers(
     };
 
     for record in records {
-        let guessed_year =
-            guess_year_for_media(&record.item.media_type, record.year_hint, &record.item.title);
+        let guessed_year = guess_year_for_media(
+            &record.item.media_type,
+            record.year_hint,
+            &record.item.title,
+        );
         let title_variants = title_variants(&record.item.title);
         let movie_hint = has_movie_hint(&record.item.title);
         let season_hint = has_season_hint(&record.item.title);
@@ -1608,7 +1611,13 @@ pub async fn rebuild_media_covers(
                 )
                 .await?
             }
-            "YouTube" => fetch_youtube_official_thumbnail(record.youtube_id.as_deref(), record.url.as_deref()).await?,
+            "YouTube" => {
+                fetch_youtube_official_thumbnail(
+                    record.youtube_id.as_deref(),
+                    record.url.as_deref(),
+                )
+                .await?
+            }
             _ => None,
         };
 
@@ -1809,7 +1818,9 @@ pub async fn fix_broken_covers(
                     )
                     .await?
                 }
-                "YouTube" => fetch_youtube_cover(record.youtube_id.as_deref(), record.url.as_deref()),
+                "YouTube" => {
+                    fetch_youtube_cover(record.youtube_id.as_deref(), record.url.as_deref())
+                }
                 _ => None,
             };
 
@@ -2607,10 +2618,7 @@ fn write_media_cover_cache_v2(
     Ok(())
 }
 
-fn write_media_cover_broken(
-    root: &Path,
-    broken: &HashMap<String, String>,
-) -> Result<(), String> {
+fn write_media_cover_broken(root: &Path, broken: &HashMap<String, String>) -> Result<(), String> {
     let path = media_cover_broken_path(root);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
@@ -3602,7 +3610,11 @@ fn title_variants(title: &str) -> Vec<String> {
 
     let lower = base.to_lowercase();
     if lower.contains("chainsaw") {
-        push_variant(&mut variants, base.replace("Chainsaw", "Chain Saw").replace("chainsaw", "chain saw"));
+        push_variant(
+            &mut variants,
+            base.replace("Chainsaw", "Chain Saw")
+                .replace("chainsaw", "chain saw"),
+        );
     }
     if lower.contains("wall-e") || lower.contains("wall e") || lower.contains("wall·e") {
         push_variant(&mut variants, "WALL·E".to_string());
@@ -3700,7 +3712,6 @@ fn guess_year_for_media(_media_type: &str, year_hint: Option<i32>, title: &str) 
     }
     None
 }
-
 
 fn game_title_variants(title: &str) -> Vec<String> {
     let mut variants = title_variants(title);
@@ -3891,23 +3902,28 @@ async fn fetch_tmdb_official_cover(
         require_animation,
     )
     .await?;
-    let has_exact = candidates.iter().any(|candidate| candidate.title_score == 3);
+    let has_exact = candidates
+        .iter()
+        .any(|candidate| candidate.title_score == 3);
     if candidates.is_empty() || !has_exact {
-        let mut fallback =
-            fetch_tmdb_candidates(
-                title,
-                variants,
-                &match_terms,
-                media_type,
-                api_key,
-                target_year,
-                false,
-                require_animation,
-            )
-            .await?;
+        let mut fallback = fetch_tmdb_candidates(
+            title,
+            variants,
+            &match_terms,
+            media_type,
+            api_key,
+            target_year,
+            false,
+            require_animation,
+        )
+        .await?;
         candidates.append(&mut fallback);
     }
-    if candidates.is_empty() || candidates.iter().all(|candidate| candidate.title_score == 0) {
+    if candidates.is_empty()
+        || candidates
+            .iter()
+            .all(|candidate| candidate.title_score == 0)
+    {
         return Ok(None);
     }
     let prefer_earliest = prefer_earliest && target_year.is_none();
@@ -3926,7 +3942,11 @@ async fn fetch_tmdb_official_cover(
                         .unwrap_or(std::cmp::Ordering::Equal)
                 }
             })
-            .then_with(|| b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| {
+                b.popularity
+                    .partial_cmp(&a.popularity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     });
     candidates.dedup_by(|a, b| a.id == b.id);
 
@@ -3944,7 +3964,11 @@ async fn fetch_tmdb_official_cover(
                         .unwrap_or(std::cmp::Ordering::Equal)
                 }
             })
-            .then_with(|| b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| {
+                b.popularity
+                    .partial_cmp(&a.popularity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     });
 
     let top = &candidates[0];
@@ -4096,7 +4120,12 @@ async fn fetch_tmdb_candidates(
                 .release_date
                 .clone()
                 .or_else(|| result.first_air_date.clone())
-                .and_then(|value| value.split('-').next().and_then(|value| value.parse::<i32>().ok()));
+                .and_then(|value| {
+                    value
+                        .split('-')
+                        .next()
+                        .and_then(|value| value.parse::<i32>().ok())
+                });
             let title_score = match_terms
                 .iter()
                 .map(|term| score_title_match(&title_value, term))
@@ -4160,7 +4189,12 @@ async fn fetch_tmdb_candidates(
                     .release_date
                     .clone()
                     .or_else(|| result.first_air_date.clone())
-                    .and_then(|value| value.split('-').next().and_then(|value| value.parse::<i32>().ok()));
+                    .and_then(|value| {
+                        value
+                            .split('-')
+                            .next()
+                            .and_then(|value| value.parse::<i32>().ok())
+                    });
                 let title_score = match_terms
                     .iter()
                     .map(|term| score_title_match(&title_value, term))
@@ -4189,7 +4223,11 @@ async fn fetch_tmdb_candidates(
             b.title_score
                 .cmp(&a.title_score)
                 .then_with(|| a.year_diff.cmp(&b.year_diff))
-                .then_with(|| b.popularity.partial_cmp(&a.popularity).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| {
+                    b.popularity
+                        .partial_cmp(&a.popularity)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
         });
         let top = &candidates[0];
         let second = &candidates[1];
@@ -4260,7 +4298,8 @@ async fn fetch_tmdb_details(
     media_type: &str,
     id: u64,
 ) -> Result<TmdbResult, String> {
-    let url = format!("https://api.themoviedb.org/3/{media_type}/{id}?api_key={api_key}&language=en-US");
+    let url =
+        format!("https://api.themoviedb.org/3/{media_type}/{id}?api_key={api_key}&language=en-US");
     let client = Client::builder()
         .timeout(StdDuration::from_secs(8))
         .build()
@@ -4702,9 +4741,7 @@ fn normalize_tokens(value: &str) -> Vec<String> {
     let mut tokens: Vec<String> = Vec::new();
     let mut idx = 0;
     while idx < raw_tokens.len() {
-        if idx + 1 < raw_tokens.len()
-            && raw_tokens[idx] == "chain"
-            && raw_tokens[idx + 1] == "saw"
+        if idx + 1 < raw_tokens.len() && raw_tokens[idx] == "chain" && raw_tokens[idx + 1] == "saw"
         {
             tokens.push("chainsaw".to_string());
             idx += 2;
@@ -4722,7 +4759,11 @@ fn parse_season_number(title: &str) -> Option<u32> {
     for idx in 0..tokens.len() {
         let token = tokens[idx];
         if token.starts_with('s') && token.len() > 1 {
-            let digits: String = token.chars().skip(1).take_while(|c| c.is_ascii_digit()).collect();
+            let digits: String = token
+                .chars()
+                .skip(1)
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
             if let Ok(value) = digits.parse::<u32>() {
                 return Some(value);
             }
@@ -4808,9 +4849,7 @@ async fn fetch_exa_tmdb_official_cover(
     year_hint: Option<i32>,
     require_english: bool,
 ) -> Result<Option<CoverMeta>, String> {
-    let Some((kind, id)) =
-        fetch_exa_tmdb_id(title, variants, exa_api_key, year_hint).await?
-    else {
+    let Some((kind, id)) = fetch_exa_tmdb_id(title, variants, exa_api_key, year_hint).await? else {
         return Ok(None);
     };
     if kind != media_type {
@@ -4846,7 +4885,11 @@ async fn fetch_exa_tmdb_official_cover(
         }
     }
     let images = fetch_tmdb_images(tmdb_api_key, &kind, id).await?;
-    let selected = select_tmdb_poster(detail.poster_path.as_deref(), &images.posters, require_english);
+    let selected = select_tmdb_poster(
+        detail.poster_path.as_deref(),
+        &images.posters,
+        require_english,
+    );
     let Some(poster) = selected else {
         return Ok(None);
     };
@@ -5302,7 +5345,13 @@ async fn fetch_youtube_official_thumbnail(
     url: Option<&str>,
 ) -> Result<Option<CoverMeta>, String> {
     let id = youtube_id
-        .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
+        .and_then(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        })
         .or_else(|| url.and_then(extract_youtube_id));
     let Some(video_id) = id else {
         return Ok(None);

@@ -1,7 +1,10 @@
 mod events;
 mod handlers;
+mod images;
 mod obsidian;
 mod service;
+#[cfg(test)]
+mod tests;
 mod types;
 
 pub use service::LifeStreamService;
@@ -32,9 +35,7 @@ pub async fn life_stream_load_day(
     }
 
     let workspaces = state.workspaces.lock().await;
-    let entry = workspaces
-        .get(&workspace_id)
-        .ok_or("workspace not found")?;
+    let entry = workspaces.get(&workspace_id).ok_or("workspace not found")?;
     let obsidian_root = entry.settings.obsidian_root.as_deref();
 
     let life_stream = state.life_stream_service.lock().await;
@@ -69,9 +70,7 @@ pub async fn life_stream_submit(
     }
 
     let workspaces = state.workspaces.lock().await;
-    let entry = workspaces
-        .get(&workspace_id)
-        .ok_or("workspace not found")?;
+    let entry = workspaces.get(&workspace_id).ok_or("workspace not found")?;
     let obsidian_root = entry.settings.obsidian_root.as_deref();
 
     let life_stream = state.life_stream_service.lock().await;
@@ -128,13 +127,46 @@ pub async fn life_stream_retry(
     }
 
     let workspaces = state.workspaces.lock().await;
-    let entry = workspaces
-        .get(&workspace_id)
-        .ok_or("workspace not found")?;
+    let entry = workspaces.get(&workspace_id).ok_or("workspace not found")?;
     let obsidian_root = entry.settings.obsidian_root.as_deref();
 
     let life_stream = state.life_stream_service.lock().await;
     life_stream
         .retry(&workspace_id, &entry.path, obsidian_root, &card_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn life_stream_clarify(
+    workspace_id: String,
+    card_id: String,
+    option_id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        remote_backend::call_remote(
+            &*state,
+            app,
+            "life_stream_clarify",
+            json!({ "workspaceId": workspace_id, "cardId": card_id, "optionId": option_id }),
+        )
+        .await?;
+        return Ok(());
+    }
+
+    let workspaces = state.workspaces.lock().await;
+    let entry = workspaces.get(&workspace_id).ok_or("workspace not found")?;
+    let obsidian_root = entry.settings.obsidian_root.as_deref();
+
+    let life_stream = state.life_stream_service.lock().await;
+    life_stream
+        .resume_with_clarification(
+            &workspace_id,
+            &entry.path,
+            obsidian_root,
+            &card_id,
+            &option_id,
+        )
         .await
 }

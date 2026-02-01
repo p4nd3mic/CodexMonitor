@@ -4,7 +4,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use tokio::fs;
 
 use super::service::EnrichedData;
-use super::types::{CardImage, CardState, CardType, DomainId, StreamCard};
+use super::types::{CardImage, CardState, CardType, DomainId, LifeStreamError, StreamCard};
 
 #[derive(Clone)]
 pub struct ObsidianIO {
@@ -21,17 +21,18 @@ impl ObsidianIO {
         workspace_path: &str,
         obsidian_root: Option<&str>,
         date_iso: &str,
-    ) -> Result<Vec<StreamCard>, String> {
+    ) -> Result<Vec<StreamCard>, LifeStreamError> {
         let root = self.resolve_root(workspace_path, obsidian_root)?;
         let date = NaiveDate::parse_from_str(date_iso, "%Y-%m-%d")
-            .map_err(|err| format!("Invalid date {date_iso}: {err}"))?;
+            .map_err(|err| LifeStreamError::Parse(format!("Invalid date {date_iso}: {err}")))?;
         let stream_file = stream_file_path(&root, date.year(), date.month());
+        let stream_file = validate_path_within_vault(&root, &stream_file)?;
         if !stream_file.exists() {
             return Ok(Vec::new());
         }
         let content = fs::read_to_string(&stream_file)
             .await
-            .map_err(|err| format!("Failed to read stream file: {err}"))?;
+            .map_err(|err| LifeStreamError::Io(format!("Failed to read stream file: {err}")))?;
         Ok(parse_cards_from_stream(&content, date, &stream_file))
     }
 
@@ -42,7 +43,7 @@ impl ObsidianIO {
         card_id: &str,
         occurred_at: &str,
         enriched: &EnrichedData,
-    ) -> Result<(), String> {
+    ) -> Result<(), LifeStreamError> {
         let root = self.resolve_root(workspace_path, obsidian_root)?;
         let date_time = chrono::DateTime::parse_from_rfc3339(occurred_at)
             .map(|value| value.naive_local())
@@ -50,19 +51,22 @@ impl ObsidianIO {
             .or_else(|_| NaiveDateTime::parse_from_str(occurred_at, "%Y-%m-%dT%H:%M:%S%.f%z"))
             .or_else(|_| NaiveDateTime::parse_from_str(occurred_at, "%Y-%m-%dT%H:%M:%S"))
             .or_else(|_| NaiveDateTime::parse_from_str(occurred_at, "%Y-%m-%dT%H:%M:%S%.f"))
-            .map_err(|err| format!("Invalid timestamp {occurred_at}: {err}"))?;
+            .map_err(|err| {
+                LifeStreamError::Parse(format!("Invalid timestamp {occurred_at}: {err}"))
+            })?;
         let date = date_time.date();
         let stream_file = stream_file_path(&root, date.year(), date.month());
+        let stream_file = validate_path_within_vault(&root, &stream_file)?;
         if let Some(parent) = stream_file.parent() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|err| format!("Failed to create stream directory: {err}"))?;
+            fs::create_dir_all(parent).await.map_err(|err| {
+                LifeStreamError::Io(format!("Failed to create stream directory: {err}"))
+            })?;
         }
 
         let content = if stream_file.exists() {
             fs::read_to_string(&stream_file)
                 .await
-                .map_err(|err| format!("Failed to read stream file: {err}"))?
+                .map_err(|err| LifeStreamError::Io(format!("Failed to read stream file: {err}")))?
         } else {
             String::new()
         };
@@ -70,7 +74,7 @@ impl ObsidianIO {
         let updated = append_card_entry(&content, date, card_id, occurred_at, enriched);
         fs::write(&stream_file, updated)
             .await
-            .map_err(|err| format!("Failed to write stream file: {err}"))?;
+            .map_err(|err| LifeStreamError::Io(format!("Failed to write stream file: {err}")))?;
 
         Ok(())
     }
@@ -79,29 +83,62 @@ impl ObsidianIO {
         &self,
         workspace_path: &str,
         obsidian_root: Option<&str>,
-    ) -> Result<PathBuf, String> {
-        Ok(self.resolve_root_path(workspace_path, obsidian_root))
+    ) -> Result<PathBuf, LifeStreamError> {
+        self.resolve_root_path(workspace_path, obsidian_root)
     }
 }
 
 impl ObsidianIO {
     pub fn resolve_root_path(
         &self,
-        workspace_path: &str,
+        _workspace_path: &str,
         obsidian_root: Option<&str>,
-    ) -> PathBuf {
+    ) -> Result<PathBuf, LifeStreamError> {
         if let Some(root) = obsidian_root {
-            return PathBuf::from(root);
+            return Ok(PathBuf::from(root));
         }
         if let Some(root) = &self.obsidian_root {
-            return PathBuf::from(root);
+            return Ok(PathBuf::from(root));
         }
-        let fallback = PathBuf::from(workspace_path);
-        if fallback.exists() {
-            return fallback;
-        }
-        PathBuf::from("/Volumes/YouTube 4TB/Obsidian")
+        Err(LifeStreamError::Configuration(
+            "obsidian_root not configured in workspace settings".to_string(),
+        ))
     }
+}
+
+/// Validates that a path stays within the vault root.
+fn validate_path_within_vault(
+    vault_root: &Path,
+    requested_path: &Path,
+) -> Result<PathBuf, LifeStreamError> {
+    let canonical_root = vault_root
+        .canonicalize()
+        .map_err(|e| LifeStreamError::Io(format!("Cannot canonicalize vault root: {e}")))?;
+
+    let canonical_requested = if requested_path.exists() {
+        requested_path
+            .canonicalize()
+            .map_err(|e| LifeStreamError::Io(format!("Cannot canonicalize path: {e}")))?
+    } else {
+        let relative = requested_path.strip_prefix(vault_root).map_err(|_| {
+            LifeStreamError::Security(format!(
+                "Path traversal attempt: {} is outside vault root {}",
+                requested_path.display(),
+                vault_root.display()
+            ))
+        })?;
+        canonical_root.join(relative)
+    };
+
+    if !canonical_requested.starts_with(&canonical_root) {
+        return Err(LifeStreamError::Security(format!(
+            "Path traversal attempt: {} is outside vault root {}",
+            canonical_requested.display(),
+            canonical_root.display()
+        )));
+    }
+
+    Ok(canonical_requested)
 }
 
 fn stream_file_path(root: &Path, year: i32, month: u32) -> PathBuf {
@@ -195,11 +232,7 @@ fn append_card_entry(
     output.join("\n") + "\n"
 }
 
-fn parse_cards_from_stream(
-    content: &str,
-    date: NaiveDate,
-    stream_file: &Path,
-) -> Vec<StreamCard> {
+fn parse_cards_from_stream(content: &str, date: NaiveDate, stream_file: &Path) -> Vec<StreamCard> {
     let mut cards = Vec::new();
     let mut current_date: Option<NaiveDate> = None;
     for line in content.lines() {
@@ -229,6 +262,7 @@ fn parse_cards_from_stream(
                 image: Some(CardImage {
                     url: None,
                     status: super::types::ImageStatus::Missing,
+                    source: None,
                 }),
                 stats: None,
                 entities: None,
@@ -238,6 +272,7 @@ fn parse_cards_from_stream(
                     stream_anchor: Some(entry.task_id.clone()),
                 }),
                 expanded: None,
+                clarification_options: None,
                 error_message: None,
             });
         }
@@ -245,13 +280,14 @@ fn parse_cards_from_stream(
     cards
 }
 
-struct ParsedEntry {
-    task_id: String,
-    occurred_at: String,
-    title: String,
+#[derive(Debug, PartialEq)]
+pub(crate) struct ParsedEntry {
+    pub(crate) task_id: String,
+    pub(crate) occurred_at: String,
+    pub(crate) title: String,
 }
 
-fn parse_table_entry(line: &str, date: NaiveDate) -> Option<ParsedEntry> {
+pub(crate) fn parse_table_entry(line: &str, date: NaiveDate) -> Option<ParsedEntry> {
     let trimmed = line.trim();
     if !trimmed.starts_with('|') || !trimmed.contains("<!--task:") {
         return None;
@@ -290,7 +326,10 @@ fn parse_header_date(line: &str, year: i32) -> Option<NaiveDate> {
     if !trimmed.starts_with("## ") {
         return None;
     }
-    let parts: Vec<&str> = trimmed.trim_start_matches("## ").split_whitespace().collect();
+    let parts: Vec<&str> = trimmed
+        .trim_start_matches("## ")
+        .split_whitespace()
+        .collect();
     if parts.len() < 3 {
         return None;
     }
@@ -317,7 +356,7 @@ fn month_number(name: &str) -> Option<u32> {
     }
 }
 
-fn normalize_time(value: &str) -> Option<String> {
+pub(crate) fn normalize_time(value: &str) -> Option<String> {
     let lower = value.to_lowercase();
     let (time_part, suffix) = if lower.ends_with("am") {
         (lower.trim_end_matches("am"), "am")

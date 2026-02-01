@@ -66,10 +66,23 @@
   gap: 10px;
 }
 
+.life-stream-card.is-expanded {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
 .life-stream-card__header {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.life-stream-card__expand {
+  margin-left: 8px;
+  border: none;
+  background: transparent;
+  color: var(--life-text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
 }
 
 .life-stream-card__emoji {
@@ -144,6 +157,40 @@
 .life-stream-card__error {
   color: var(--life-color-negative);
   font-size: 0.85rem;
+}
+
+.life-stream-card__clarification {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px dashed var(--life-border-subtle);
+  background: var(--life-bg-elevated);
+}
+
+.life-stream-card__clarification-message {
+  color: var(--life-text-secondary);
+  font-size: 0.85rem;
+}
+
+.life-stream-card__clarification-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.life-stream-card__clarification-option {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--life-border-subtle);
+  background: var(--life-bg-raised);
+  color: var(--life-text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .life-stream-card__actions {
@@ -222,6 +269,15 @@
   color: #08110c;
   font-weight: 600;
   cursor: pointer;
+}
+
+.life-stream-composer__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.life-stream-composer__input:disabled {
+  opacity: 0.7;
 }
 
 @media (max-width: 720px) {

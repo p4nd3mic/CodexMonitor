@@ -1,0 +1,172 @@
+.life-stream-card-image {
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--life-bg-elevated);
+  border: 1px solid var(--life-border-subtle);
+  position: relative;
+}
+
+.life-stream-card-image.is-compact {
+  aspect-ratio: 4 / 3;
+}
+
+.life-stream-card-image.is-expanded {
+  aspect-ratio: 16 / 9;
+}
+
+.life-stream-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.life-stream-card-image__placeholder {
+  height: 100%;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  color: var(--life-text-secondary);
+}
+
+.life-stream-card-image__emoji {
+  font-size: 1.6rem;
+}
+
+.life-stream-card-image__label {
+  font-size: 0.85rem;
+}
+
+.life-stream-card-image__spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--life-text-primary);
+  animation: life-stream-spin 1s linear infinite;
+}
+
+.life-stream-card-image__action {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--life-border-subtle);
+  background: var(--life-bg-raised);
+  color: var(--life-text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.life-stream-card-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--life-border-subtle);
+  position: relative;
+  animation: life-stream-expand 0.25s ease-out;
+}
+
+@keyframes life-stream-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.life-stream-card-expanded__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.life-stream-card-expanded__title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--life-text-muted);
+}
+
+.life-stream-card-expanded__body {
+  font-size: 0.9rem;
+  color: var(--life-text-secondary);
+  white-space: pre-wrap;
+}
+
+.life-stream-card-expanded__body.is-mono {
+  font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+}
+
+.life-stream-card-expanded__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.life-stream-card-expanded__close {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  color: var(--life-text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.life-stream-card-expanded__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.life-stream-card-expanded__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--life-bg-elevated);
+  border: 1px solid var(--life-border-subtle);
+  font-size: 0.75rem;
+  color: var(--life-text-secondary);
+}
+
+.life-stream-card-expanded__action {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--life-border-subtle);
+  background: var(--life-bg-elevated);
+  color: var(--life-text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.life-stream-card-expanded__action.is-primary {
+  background: var(--life-accent);
+  color: #08110c;
+  border-color: transparent;
+}
+
+.life-stream-card-expanded__action.is-danger {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.life-stream-card-expanded__action:disabled,
+.life-stream-card-image__action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

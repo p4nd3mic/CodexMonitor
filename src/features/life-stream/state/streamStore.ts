@@ -1,7 +1,7 @@
-import type { LifeStreamEvent, StreamCard } from "../types";
+import type { LifeStreamEvent, StreamCard, StreamCardPatch } from "../types";
 
 type Listener = () => void;
-type CardListener = (card: StreamCard) => void;
+type CardListener = () => void;
 
 class StreamStore {
   private cards: Map<string, StreamCard> = new Map();
@@ -38,6 +38,10 @@ class StreamStore {
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   }
 
+  getCardIds(): string[] {
+    return this.getSnapshot().map((card) => card.id);
+  }
+
   getCard(cardId: string): StreamCard | undefined {
     return this.cards.get(cardId);
   }
@@ -65,16 +69,45 @@ class StreamStore {
     this.notifyGlobal();
   }
 
-  updateCard(cardId: string, patch: Partial<StreamCard>, newVersion: number): void {
+  updateCard(cardId: string, patch: StreamCardPatch, newVersion: number): void {
     const existing = this.cards.get(cardId);
     if (!existing) return;
 
     // Only apply if version is newer
     if (newVersion <= existing.version) return;
 
-    const updated = { ...existing, ...patch, version: newVersion };
+    const updated: StreamCard = { ...existing, version: newVersion };
+
+    if (patch.state) updated.state = patch.state;
+    if (patch.title) updated.title = patch.title;
+    if (patch.subtitle !== undefined) updated.subtitle = patch.subtitle;
+    if (patch.processingStep) {
+      updated.processingStep = patch.processingStep;
+      const steps = updated.processingSteps ?? [];
+      updated.processingSteps = [...steps, patch.processingStep];
+    }
+    if (patch.processingSteps) {
+      updated.processingSteps = patch.processingSteps;
+    }
+    if (patch.errorMessage !== undefined) {
+      updated.errorMessage = patch.errorMessage || undefined;
+    }
+    if (patch.stats) {
+      updated.stats = patch.stats;
+    }
+    if (patch.image) {
+      updated.image = patch.image;
+    }
+    if (patch.expanded) {
+      updated.expanded = patch.expanded;
+    }
+    if (patch.clarificationOptions !== undefined) {
+      updated.clarificationOptions =
+        patch.clarificationOptions.length > 0 ? patch.clarificationOptions : undefined;
+    }
+
     this.cards.set(cardId, updated);
-    this.notifyCard(cardId, updated);
+    this.notifyCard(cardId);
   }
 
   setCardStep(cardId: string, step: string, newVersion: number): void {
@@ -90,7 +123,7 @@ class StreamStore {
       version: newVersion,
     };
     this.cards.set(cardId, updated);
-    this.notifyCard(cardId, updated);
+    this.notifyCard(cardId);
   }
 
   completeCard(card: StreamCard): void {
@@ -98,7 +131,7 @@ class StreamStore {
     if (existing && card.version <= existing.version) return;
 
     this.cards.set(card.id, card);
-    this.notifyCard(card.id, card);
+    this.notifyCard(card.id);
   }
 
   setCardError(cardId: string, message: string, newVersion: number): void {
@@ -113,7 +146,7 @@ class StreamStore {
       version: newVersion,
     };
     this.cards.set(cardId, updated);
-    this.notifyCard(cardId, updated);
+    this.notifyCard(cardId);
   }
 
   // Handle incoming event
@@ -126,7 +159,7 @@ class StreamStore {
         this.setCardStep(event.cardId, event.step, event.version);
         break;
       case "card_updated":
-        this.updateCard(event.cardId, event.patch as Partial<StreamCard>, event.version);
+        this.updateCard(event.cardId, event.patch, event.version);
         break;
       case "card_completed":
         this.completeCard(event.card);
@@ -143,11 +176,11 @@ class StreamStore {
     }
   }
 
-  private notifyCard(cardId: string, card: StreamCard): void {
+  private notifyCard(cardId: string): void {
     const listeners = this.cardListeners.get(cardId);
     if (listeners) {
       for (const listener of listeners) {
-        listener(card);
+        listener();
       }
     }
   }

@@ -40,6 +40,8 @@ export function EmojiFilters({ activeFilters, onToggle, onClear }: EmojiFiltersP
               key={filter.domain}
               className={`life-segment-button ${active ? "is-active" : ""}`}
               onClick={() => onToggle(filter.domain)}
+              aria-pressed={active}
+              aria-label={`Filter ${filter.label.toLowerCase()}`}
             >
               <span className="life-stream-filters__emoji" aria-hidden>
                 {filter.emoji}

@@ -92,6 +92,21 @@
   gap: 8px;
 }
 
+.life-domain-selector-details {
+  border: none;
+}
+
+.life-domain-selector-details > summary {
+  cursor: pointer;
+  color: var(--life-text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.life-domain-selector-list.is-secondary {
+  margin-top: 8px;
+}
+
 .life-domain-button {
   display: flex;
   align-items: center;
@@ -103,6 +118,11 @@
   color: inherit;
   text-align: left;
   transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.life-domain-button--primary {
+  border-color: var(--life-accent);
+  background: rgba(16, 185, 129, 0.15);
 }
 
 .life-domain-button.is-active {

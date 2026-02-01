@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -50,6 +51,8 @@ pub enum ImageStatus {
 pub struct CardImage {
     pub url: Option<String>,
     pub status: ImageStatus,
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,12 +74,36 @@ pub struct ExpandedSection {
 pub struct CardAction {
     pub id: String,
     pub label: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub style: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpandedContent {
+    #[serde(rename = "originalInput")]
+    pub original_input: Option<String>,
     pub sections: Vec<ExpandedSection>,
+    #[serde(rename = "entityLinks")]
+    pub entity_links: Option<Vec<EntityLink>>,
     pub actions: Vec<CardAction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityLink {
+    pub name: String,
+    pub path: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClarificationOption {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub emoji: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,15 +152,20 @@ pub struct StreamCard {
 
     pub expanded: Option<ExpandedContent>,
 
+    #[serde(rename = "clarificationOptions")]
+    pub clarification_options: Option<Vec<ClarificationOption>>,
+
     #[serde(rename = "errorMessage")]
     pub error_message: Option<String>,
 }
 
 // Event types for broadcasting
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LifeStreamEvent {
-    CardCreated { card: StreamCard },
+    CardCreated {
+        card: StreamCard,
+    },
     CardStep {
         #[serde(rename = "cardId")]
         card_id: String,
@@ -143,16 +175,77 @@ pub enum LifeStreamEvent {
     CardUpdated {
         #[serde(rename = "cardId")]
         card_id: String,
-        patch: serde_json::Value,
+        patch: StreamCardPatch,
         version: u32,
     },
-    CardCompleted { card: StreamCard },
+    CardCompleted {
+        card: StreamCard,
+    },
     CardError {
         #[serde(rename = "cardId")]
         card_id: String,
         message: String,
         version: u32,
     },
+}
+
+/// Typed patch for card updates via events.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamCardPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<CardState>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "processingStep")]
+    pub processing_step: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "processingSteps")]
+    pub processing_steps: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "errorMessage")]
+    pub error_message: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats: Option<HashMap<String, CardStatValue>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<CardImage>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expanded: Option<ExpandedContent>,
+
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "clarificationOptions"
+    )]
+    pub clarification_options: Option<Vec<ClarificationOption>>,
+}
+
+/// Constrained stat value type for sync with TypeScript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CardStatValue {
+    String(String),
+    Integer(i64),
+    Float(f64),
+}
+
+#[derive(Debug, Error)]
+pub enum LifeStreamError {
+    #[error("Configuration error: {0}")]
+    Configuration(String),
+    #[error("Security violation: {0}")]
+    Security(String),
+    #[error("I/O error: {0}")]
+    Io(String),
+    #[error("Parse error: {0}")]
+    Parse(String),
 }
 
 // Submit input parameters

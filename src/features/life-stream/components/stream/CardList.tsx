@@ -1,21 +1,27 @@
-import type { StreamCard } from "../../types";
 import { CardItem } from "./CardItem";
 
 type CardListProps = {
-  cards: StreamCard[];
+  cardIds: string[];
   onCancel: (cardId: string) => void;
   onRetry: (cardId: string) => void;
+  onClarify: (cardId: string, optionId: string) => void;
 };
 
-export function CardList({ cards, onCancel, onRetry }: CardListProps) {
-  if (cards.length === 0) {
+export function CardList({ cardIds, onCancel, onRetry, onClarify }: CardListProps) {
+  if (cardIds.length === 0) {
     return <div className="life-dashboard-status">No cards for this day yet.</div>;
   }
 
   return (
     <section className="life-stream-card-list">
-      {cards.map((card) => (
-        <CardItem key={card.id} card={card} onCancel={onCancel} onRetry={onRetry} />
+      {cardIds.map((cardId) => (
+        <CardItem
+          key={cardId}
+          cardId={cardId}
+          onCancel={onCancel}
+          onRetry={onRetry}
+          onClarify={onClarify}
+        />
       ))}
     </section>
   );

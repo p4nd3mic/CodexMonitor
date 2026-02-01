@@ -7,7 +7,6 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::auto_flush::AutoMemoryRuntime;
 use crate::dictation::DictationState;
-use crate::life_core::default_obsidian_root;
 use crate::life_stream::LifeStreamService;
 use crate::memory::MemoryService;
 use crate::storage::{
@@ -67,7 +66,12 @@ impl AppState {
         } else {
             None
         };
-        let mut life_stream_service = LifeStreamService::new(default_obsidian_root());
+        let tmdb_key = if app_settings.tmdb_api_key.is_empty() {
+            None
+        } else {
+            Some(app_settings.tmdb_api_key.clone())
+        };
+        let mut life_stream_service = LifeStreamService::new(None, tmdb_key);
         life_stream_service.set_emitter(app.clone());
 
         Self {

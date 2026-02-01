@@ -48,10 +48,14 @@ export type ExpandedSection = {
 export type CardAction = {
   id: string;
   label: string;
+  icon?: string;
+  style?: string;
 };
 
 export type ExpandedContent = {
+  originalInput?: string;
   sections: ExpandedSection[];
+  entityLinks?: EntityLink[];
   actions: CardAction[];
 };
 
@@ -59,6 +63,19 @@ export type ExpandedContent = {
 export type CardImage = {
   url?: string;
   status: ImageStatus;
+  source?: string;
+};
+
+export type EntityLink = {
+  name: string;
+  path: string;
+  icon?: string;
+};
+
+export type ClarificationOption = {
+  id: string;
+  label: string;
+  emoji?: string;
 };
 
 // Main StreamCard type
@@ -94,8 +111,22 @@ export type StreamCard = {
   };
 
   expanded?: ExpandedContent;
+  clarificationOptions?: ClarificationOption[];
 
   errorMessage?: string;
+};
+
+export type StreamCardPatch = {
+  state?: CardState;
+  title?: string;
+  subtitle?: string;
+  processingStep?: string;
+  processingSteps?: string[];
+  errorMessage?: string;
+  stats?: Record<string, string | number>;
+  image?: CardImage;
+  expanded?: ExpandedContent;
+  clarificationOptions?: ClarificationOption[];
 };
 
 // Event types for real-time updates
@@ -105,7 +136,7 @@ export type LifeStreamEvent =
   | {
       type: "card_updated";
       cardId: string;
-      patch: Partial<StreamCard>;
+      patch: StreamCardPatch;
       version: number;
     }
   | { type: "card_completed"; card: StreamCard }

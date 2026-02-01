@@ -6,14 +6,14 @@ use tokio::fs;
 
 use crate::life_stream::types::EntityRef;
 
-#[derive(Debug, Deserialize)]
-struct FoodEntity {
-    name: String,
-    calories: f64,
-    protein: f64,
-    carbs: f64,
-    fat: f64,
-    fiber: Option<f64>,
+#[derive(Debug, Deserialize, PartialEq)]
+pub(crate) struct FoodEntity {
+    pub(crate) name: String,
+    pub(crate) calories: f64,
+    pub(crate) protein: f64,
+    pub(crate) carbs: f64,
+    pub(crate) fat: f64,
+    pub(crate) fiber: Option<f64>,
 }
 
 pub struct NutritionHandler {
@@ -45,6 +45,7 @@ impl NutritionHandler {
         }
 
         let time = occurred_at.get(11..16).unwrap_or("??:??");
+        let foods_empty = foods.is_empty();
         let title = if foods.len() == 1 {
             foods[0].name.clone()
         } else {
@@ -86,8 +87,9 @@ impl NutritionHandler {
             .collect();
 
         Ok(ProcessedMeal {
+            foods,
             title,
-            subtitle: if foods.is_empty() {
+            subtitle: if foods_empty {
                 Some(input.to_string())
             } else {
                 Some(format!(
@@ -97,7 +99,11 @@ impl NutritionHandler {
                 ))
             },
             stats: Some(stats),
-            entities: if entities.is_empty() { None } else { Some(entities) },
+            entities: if entities.is_empty() {
+                None
+            } else {
+                Some(entities)
+            },
         })
     }
 
@@ -135,7 +141,7 @@ impl NutritionHandler {
         Ok(found)
     }
 
-    fn parse_food_entity(&self, content: &str) -> Option<FoodEntity> {
+    pub(crate) fn parse_food_entity(&self, content: &str) -> Option<FoodEntity> {
         if !content.starts_with("---") {
             return None;
         }
@@ -182,6 +188,7 @@ impl NutritionHandler {
 }
 
 pub struct ProcessedMeal {
+    pub foods: Vec<FoodEntity>,
     pub title: String,
     pub subtitle: Option<String>,
     pub stats: Option<HashMap<String, serde_json::Value>>,

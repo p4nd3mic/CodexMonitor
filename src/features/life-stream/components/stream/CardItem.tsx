@@ -1,5 +1,8 @@
-import { useMemo } from "react";
-import type { StreamCard } from "../../types";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { streamStore } from "../../state/streamStore";
+import type { ClarificationOption } from "../../types";
+import { CardImage } from "./CardImage";
+import { ExpandedCard } from "./ExpandedCard";
 import { ProcessingIndicator } from "./ProcessingIndicator";
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -16,18 +19,48 @@ function formatTime(iso: string) {
 }
 
 type CardItemProps = {
-  card: StreamCard;
+  cardId: string;
   onCancel: (cardId: string) => void;
   onRetry: (cardId: string) => void;
+  onClarify: (cardId: string, optionId: string) => void;
 };
 
-export function CardItem({ card, onCancel, onRetry }: CardItemProps) {
+export function CardItem({ cardId, onCancel, onRetry, onClarify }: CardItemProps) {
+  const card = useSyncExternalStore(
+    (listener) => streamStore.subscribeToCard(cardId, listener),
+    () => streamStore.getCard(cardId),
+    () => undefined,
+  );
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!card?.expanded || card.state !== "complete") {
+      setIsExpanded(false);
+    }
+  }, [card?.expanded, card?.state]);
+
+  if (!card) return null;
+
   const timeLabel = useMemo(() => formatTime(card.occurredAt), [card.occurredAt]);
   const canCancel = card.state === "pending" || card.state === "processing" || card.state === "awaiting_input";
   const canRetry = card.state === "error";
+  const canExpand = card.state === "complete" && Boolean(card.expanded);
+  const clarificationOptions = card.clarificationOptions ?? [];
+
+  const toggleExpanded = useCallback(() => {
+    if (!canExpand) return;
+    setIsExpanded((prev) => !prev);
+  }, [canExpand]);
+
+  const handleClarify = useCallback((option: ClarificationOption) => {
+    onClarify(card.id, option.id);
+  }, [card.id, onClarify]);
 
   return (
-    <article className={`life-card life-stream-card state-${card.state}`}>
+    <article
+      className={`life-card life-stream-card state-${card.state}${isExpanded ? " is-expanded" : ""}`}
+      aria-expanded={isExpanded}
+    >
       <header className="life-stream-card__header">
         <div className="life-stream-card__emoji" aria-hidden>
           {card.emoji}
@@ -39,7 +72,27 @@ export function CardItem({ card, onCancel, onRetry }: CardItemProps) {
           )}
         </div>
         <div className="life-stream-card__time">{timeLabel}</div>
+        {canExpand && (
+          <button
+            type="button"
+            className="life-stream-card__expand"
+            onClick={toggleExpanded}
+            aria-label={isExpanded ? "Collapse card" : "Expand card"}
+            aria-expanded={isExpanded}
+          >
+            {isExpanded ? "▼" : "▶"}
+          </button>
+        )}
       </header>
+
+      {card.image && (
+        <CardImage
+          image={card.image}
+          title={card.title}
+          emoji={card.emoji}
+          size={isExpanded ? "expanded" : "compact"}
+        />
+      )}
 
       {card.summary && (
         <div className="life-stream-card__summary">{card.summary}</div>
@@ -66,8 +119,29 @@ export function CardItem({ card, onCancel, onRetry }: CardItemProps) {
         </div>
       )}
 
+      {card.state === "awaiting_input" && clarificationOptions.length > 0 && (
+        <div className="life-stream-card__clarification">
+          <div className="life-stream-card__clarification-message">
+            {card.processingStep ?? "Need more info"}
+          </div>
+          <div className="life-stream-card__clarification-options">
+            {clarificationOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className="life-stream-card__clarification-option"
+                onClick={() => handleClarify(option)}
+              >
+                {option.emoji && <span aria-hidden>{option.emoji}</span>}
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {card.errorMessage && (
-        <div className="life-stream-card__error">
+        <div role="alert" className="life-stream-card__error">
           {card.errorMessage}
         </div>
       )}
@@ -96,6 +170,10 @@ export function CardItem({ card, onCancel, onRetry }: CardItemProps) {
       )}
 
       <ProcessingIndicator card={card} />
+
+      {isExpanded && canExpand && (
+        <ExpandedCard card={card} onCollapse={() => setIsExpanded(false)} />
+      )}
     </article>
   );
 }

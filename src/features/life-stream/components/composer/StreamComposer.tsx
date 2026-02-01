@@ -1,18 +1,25 @@
 import { useState } from "react";
 
 type StreamComposerProps = {
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string) => Promise<void> | void;
 };
 
 export function StreamComposer({ onSubmit }: StreamComposerProps) {
   const [value, setValue] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (isSubmitting) return;
     const trimmed = value.trim();
     if (!trimmed) return;
-    onSubmit(trimmed);
-    setValue("");
+    setIsSubmitting(true);
+    try {
+      await onSubmit(trimmed);
+      setValue("");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -25,9 +32,10 @@ export function StreamComposer({ onSubmit }: StreamComposerProps) {
           placeholder="Log a meal, delivery, thought, or win..."
           value={value}
           onChange={(event) => setValue(event.target.value)}
+          disabled={isSubmitting}
         />
-        <button className="life-stream-composer__submit" type="submit">
-          Add
+        <button className="life-stream-composer__submit" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Sending..." : "Add"}
         </button>
       </form>
     </section>

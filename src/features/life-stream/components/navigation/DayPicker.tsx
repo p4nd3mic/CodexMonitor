@@ -26,13 +26,28 @@ export function DayPicker({ currentDate, onPrevious, onNext, onToday }: DayPicke
     <section className="life-card life-stream-day-picker">
       <div className="life-stream-day-picker__label">{label}</div>
       <div className="life-segment-control life-stream-day-picker__controls">
-        <button type="button" className="life-segment-button" onClick={onPrevious}>
+        <button
+          type="button"
+          className="life-segment-button"
+          onClick={onPrevious}
+          aria-label="Previous day"
+        >
           ◀ Prev
         </button>
-        <button type="button" className="life-segment-button" onClick={onToday}>
+        <button
+          type="button"
+          className="life-segment-button"
+          onClick={onToday}
+          aria-label="Jump to today"
+        >
           Today
         </button>
-        <button type="button" className="life-segment-button" onClick={onNext}>
+        <button
+          type="button"
+          className="life-segment-button"
+          onClick={onNext}
+          aria-label="Next day"
+        >
           Next ▶
         </button>
       </div>

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useLifeStream } from "../hooks/useLifeStream";
 import { DayPicker } from "./navigation/DayPicker";
 import { EmojiFilters } from "./navigation/EmojiFilters";
@@ -14,16 +14,38 @@ type LifeStreamViewProps = {
 export function LifeStreamView({ workspaceId }: LifeStreamViewProps) {
   const {
     cards,
+    isLoading,
     currentDate,
     submit,
     cancel,
     retry,
+    clarify,
     goToPreviousDay,
     goToNextDay,
     goToToday,
   } = useLifeStream(workspaceId);
+  const filterStorageKey = "life-stream-filters";
 
-  const [activeFilters, setActiveFilters] = useState<Set<DomainId>>(new Set());
+  const [activeFilters, setActiveFilters] = useState<Set<DomainId>>(() => {
+    if (typeof window === "undefined") {
+      return new Set();
+    }
+    const stored = window.localStorage.getItem(filterStorageKey);
+    if (!stored) return new Set();
+    try {
+      const parsed = JSON.parse(stored) as DomainId[];
+      return new Set(parsed);
+    } catch {
+      return new Set();
+    }
+  });
+
+  const persistFilters = useCallback((next: Set<DomainId>) => {
+    setActiveFilters(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(filterStorageKey, JSON.stringify(Array.from(next)));
+    }
+  }, [filterStorageKey]);
 
   const toggleFilter = useCallback((domain: DomainId) => {
     setActiveFilters((prev) => {
@@ -33,21 +55,28 @@ export function LifeStreamView({ workspaceId }: LifeStreamViewProps) {
       } else {
         next.add(domain);
       }
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(filterStorageKey, JSON.stringify(Array.from(next)));
+      }
       return next;
     });
-  }, []);
+  }, [filterStorageKey]);
 
   const clearFilters = useCallback(() => {
-    setActiveFilters(new Set());
-  }, []);
+    persistFilters(new Set());
+  }, [persistFilters]);
 
   // Filter cards by active domain filters
-  const filteredCards = activeFilters.size === 0
-    ? cards
-    : cards.filter((card) => activeFilters.has(card.domain));
+  const filteredCards = useMemo(() => (
+    activeFilters.size === 0
+      ? cards
+      : cards.filter((card) => activeFilters.has(card.domain))
+  ), [activeFilters, cards]);
+
+  const cardIds = useMemo(() => filteredCards.map((card) => card.id), [filteredCards]);
 
   const handleSubmit = useCallback((text: string) => {
-    void submit(text);
+    return submit(text);
   }, [submit]);
 
   if (!workspaceId) {
@@ -78,7 +107,16 @@ export function LifeStreamView({ workspaceId }: LifeStreamViewProps) {
         onClear={clearFilters}
       />
 
-      <CardList cards={filteredCards} onCancel={cancel} onRetry={retry} />
+      {isLoading ? (
+        <div className="life-dashboard-status">Loading stream...</div>
+      ) : (
+        <CardList
+          cardIds={cardIds}
+          onCancel={cancel}
+          onRetry={retry}
+          onClarify={clarify}
+        />
+      )}
 
       <StreamComposer onSubmit={handleSubmit} />
     </div>

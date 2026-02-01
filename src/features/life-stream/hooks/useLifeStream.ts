@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { streamStore } from "../state/streamStore";
 import type { LifeStreamEvent, StreamCard } from "../types";
 
 export function useLifeStream(workspaceId: string | null) {
+  const [isLoading, setIsLoading] = useState(false);
+  const requestIdRef = useRef(0);
+
   // Subscribe to card list changes
   const cards = useSyncExternalStore(
     (callback) => streamStore.subscribe(callback),
     () => streamStore.getSnapshot(),
+    () => [],
   );
 
   const currentDate = streamStore.getCurrentDate();
@@ -18,15 +22,23 @@ export function useLifeStream(workspaceId: string | null) {
     if (!workspaceId) return;
 
     streamStore.setDate(dateIso);
+    const requestId = ++requestIdRef.current;
+    setIsLoading(true);
 
     try {
       const cards = await invoke<StreamCard[]>("life_stream_load_day", {
         workspaceId,
         dateIso,
       });
-      streamStore.loadCards(cards);
+      if (requestIdRef.current === requestId) {
+        streamStore.loadCards(cards);
+      }
     } catch (err) {
       console.error("Failed to load day:", err);
+    } finally {
+      if (requestIdRef.current === requestId) {
+        setIsLoading(false);
+      }
     }
   }, [workspaceId]);
 
@@ -49,6 +61,7 @@ export function useLifeStream(workspaceId: string | null) {
       emoji: "📝",
       state: "pending",
       processingStep: "Submitting...",
+      processingSteps: ["Submitting..."],
       title: input.slice(0, 50) + (input.length > 50 ? "..." : ""),
       originalInput: input,
     };
@@ -104,6 +117,27 @@ export function useLifeStream(workspaceId: string | null) {
     }
   }, [workspaceId]);
 
+  const clarify = useCallback(async (cardId: string, optionId: string) => {
+    if (!workspaceId) return;
+    const existing = streamStore.getCard(cardId);
+    if (existing) {
+      streamStore.updateCard(
+        cardId,
+        {
+          state: "processing",
+          processingStep: "Resuming...",
+          clarificationOptions: [],
+        },
+        existing.version + 1,
+      );
+    }
+    try {
+      await invoke("life_stream_clarify", { workspaceId, cardId, optionId });
+    } catch (err) {
+      console.error("Failed to clarify card:", err);
+    }
+  }, [workspaceId]);
+
   // Navigate to previous/next day
   const goToPreviousDay = useCallback(() => {
     const date = new Date(currentDate);
@@ -143,10 +177,12 @@ export function useLifeStream(workspaceId: string | null) {
 
   return {
     cards,
+    isLoading,
     currentDate,
     submit,
     cancel,
     retry,
+    clarify,
     loadDay,
     goToPreviousDay,
     goToNextDay,

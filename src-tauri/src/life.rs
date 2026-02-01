@@ -5,10 +5,11 @@ pub(crate) use crate::life_core::{
     build_delivery_dashboard, build_exercise_dashboard, build_finance_dashboard,
     build_life_workspace_prompt, build_media_library, build_nutrition_dashboard,
     build_youtube_library, enrich_media_covers as enrich_media_covers_inner,
-    fix_broken_covers as fix_broken_covers_inner, rebuild_media_covers as rebuild_media_covers_inner,
-    is_life_workspace, life_debug_enabled, refetch_media_cover as refetch_media_cover_inner,
-    CoverRebuildResult, DeliveryDashboard, ExerciseDashboard, FinanceDashboard, FixCoversResult,
-    MediaCoverSummary, MediaLibrary, NutritionDashboard, YouTubeLibrary,
+    fix_broken_covers as fix_broken_covers_inner, is_life_workspace, life_debug_enabled,
+    rebuild_media_covers as rebuild_media_covers_inner,
+    refetch_media_cover as refetch_media_cover_inner, CoverRebuildResult, DeliveryDashboard,
+    ExerciseDashboard, FinanceDashboard, FixCoversResult, MediaCoverSummary, MediaLibrary,
+    NutritionDashboard, YouTubeLibrary,
 };
 use crate::remote_backend;
 use crate::state::AppState;

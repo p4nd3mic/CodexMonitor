@@ -7,6 +7,9 @@ type DomainSelectorProps = {
 };
 
 export function DomainSelector({ activeDomain, onSelect }: DomainSelectorProps) {
+  const streamDomain = LIFE_DOMAINS.find((domain) => domain.id === "stream");
+  const dashboardDomains = LIFE_DOMAINS.filter((domain) => domain.id !== "stream");
+
   return (
     <div className="life-domain-selector">
       <div className="life-domain-selector-header">
@@ -22,22 +25,39 @@ export function DomainSelector({ activeDomain, onSelect }: DomainSelectorProps) 
         )}
       </div>
       <div className="life-domain-selector-list">
-        {LIFE_DOMAINS.map((domain) => {
-          const isActive = activeDomain === domain.id;
-          return (
-            <button
-              key={domain.id}
-              type="button"
-              className={`life-domain-button${isActive ? " is-active" : ""}`}
-              onClick={() => onSelect(domain.id)}
-            >
-              <span className="life-domain-icon" aria-hidden>
-                {domain.icon}
-              </span>
-              <span className="life-domain-label">{domain.label}</span>
-            </button>
-          );
-        })}
+        {streamDomain && (
+          <button
+            type="button"
+            className={`life-domain-button life-domain-button--primary${activeDomain === "stream" ? " is-active" : ""}`}
+            onClick={() => onSelect("stream")}
+          >
+            <span className="life-domain-icon" aria-hidden>
+              {streamDomain.icon}
+            </span>
+            <span className="life-domain-label">{streamDomain.label}</span>
+          </button>
+        )}
+        <details className="life-domain-selector-details">
+          <summary>📊 Dashboards</summary>
+          <div className="life-domain-selector-list is-secondary">
+            {dashboardDomains.map((domain) => {
+              const isActive = activeDomain === domain.id;
+              return (
+                <button
+                  key={domain.id}
+                  type="button"
+                  className={`life-domain-button${isActive ? " is-active" : ""}`}
+                  onClick={() => onSelect(domain.id)}
+                >
+                  <span className="life-domain-icon" aria-hidden>
+                    {domain.icon}
+                  </span>
+                  <span className="life-domain-label">{domain.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </details>
       </div>
     </div>
   );

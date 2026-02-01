@@ -16,7 +16,12 @@ export function ProcessingIndicator({ card }: ProcessingIndicatorProps) {
   }
 
   return (
-    <div className="life-stream-processing">
+    <div
+      className="life-stream-processing"
+      role="status"
+      aria-live="polite"
+      aria-label={`Processing: ${card.processingStep ?? "Processing..."}`}
+    >
       <span className="life-stream-spinner" aria-hidden />
       <span className="life-stream-processing__text">
         {card.processingStep ?? "Processing..."}
