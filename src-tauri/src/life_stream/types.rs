@@ -13,6 +13,23 @@ pub enum CardState {
     Cancelled,
 }
 
+impl CardState {
+    pub fn can_transition_to(&self, next: &CardState) -> bool {
+        use CardState::*;
+        matches!(
+            (self, next),
+            (Pending, Processing)
+                | (Processing, Complete)
+                | (Processing, Error)
+                | (Processing, AwaitingInput)
+                | (Processing, Cancelled)
+                | (AwaitingInput, Processing)
+                | (AwaitingInput, Cancelled)
+                | (Error, Processing)
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum CardType {
@@ -142,7 +159,7 @@ pub struct StreamCard {
 
     pub image: Option<CardImage>,
 
-    pub stats: Option<HashMap<String, serde_json::Value>>,
+    pub stats: Option<HashMap<String, CardStatValue>>,
     pub entities: Option<Vec<EntityRef>>,
 
     #[serde(rename = "originalInput")]
@@ -234,6 +251,8 @@ pub enum CardStatValue {
     String(String),
     Integer(i64),
     Float(f64),
+    Bool(bool),
+    Null,
 }
 
 #[derive(Debug, Error)]

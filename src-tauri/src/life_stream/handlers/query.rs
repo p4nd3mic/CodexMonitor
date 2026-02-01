@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::life_stream::types::EntityRef;
+use crate::life_stream::service::truncate;
+use crate::life_stream::types::{CardStatValue, EntityRef};
 
 pub struct QueryHandler;
 
@@ -19,7 +20,10 @@ impl QueryHandler {
 
         let mut stats = HashMap::new();
         if !normalized.is_empty() {
-            stats.insert("query_len".to_string(), serde_json::json!(normalized.len()));
+            stats.insert(
+                "query_len".to_string(),
+                CardStatValue::Integer(normalized.len() as i64),
+            );
         }
 
         Ok(ProcessedQuery {
@@ -40,14 +44,6 @@ pub struct ProcessedQuery {
     pub title: String,
     pub subtitle: Option<String>,
     pub summary: Option<String>,
-    pub stats: Option<HashMap<String, serde_json::Value>>,
+    pub stats: Option<HashMap<String, CardStatValue>>,
     pub entities: Option<Vec<EntityRef>>,
-}
-
-fn truncate(value: &str, max: usize) -> String {
-    if value.len() <= max {
-        value.to_string()
-    } else {
-        format!("{}...", &value[..max])
-    }
 }

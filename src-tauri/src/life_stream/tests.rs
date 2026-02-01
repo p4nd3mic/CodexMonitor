@@ -33,8 +33,7 @@ fn normalize_time_handles_am_pm() {
 #[test]
 fn truncate_respects_utf8_boundaries() {
     let input = "café latte";
-    let max = "café".len();
-    assert_eq!(truncate(input, max), "café...");
+    assert_eq!(truncate(input, 4), "café");
     assert_eq!(truncate("short", 10), "short");
 }
 

@@ -1,4 +1,5 @@
 import { CardItem } from "./CardItem";
+import { CardErrorBoundary } from "./CardErrorBoundary";
 
 type CardListProps = {
   cardIds: string[];
@@ -15,13 +16,14 @@ export function CardList({ cardIds, onCancel, onRetry, onClarify }: CardListProp
   return (
     <section className="life-stream-card-list">
       {cardIds.map((cardId) => (
-        <CardItem
-          key={cardId}
-          cardId={cardId}
-          onCancel={onCancel}
-          onRetry={onRetry}
-          onClarify={onClarify}
-        />
+        <CardErrorBoundary key={cardId} cardId={cardId}>
+          <CardItem
+            cardId={cardId}
+            onCancel={onCancel}
+            onRetry={onRetry}
+            onClarify={onClarify}
+          />
+        </CardErrorBoundary>
       ))}
     </section>
   );

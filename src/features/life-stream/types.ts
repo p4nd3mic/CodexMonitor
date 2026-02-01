@@ -66,6 +66,8 @@ export type CardImage = {
   source?: string;
 };
 
+export type CardStatValue = string | number | boolean | null;
+
 export type EntityLink = {
   name: string;
   path: string;
@@ -100,7 +102,7 @@ export type StreamCard = {
 
   image?: CardImage;
 
-  stats?: Record<string, string | number>;
+  stats?: Record<string, CardStatValue>;
   entities?: EntityRef[];
 
   originalInput?: string;
@@ -123,7 +125,7 @@ export type StreamCardPatch = {
   processingStep?: string;
   processingSteps?: string[];
   errorMessage?: string;
-  stats?: Record<string, string | number>;
+  stats?: Record<string, CardStatValue>;
   image?: CardImage;
   expanded?: ExpandedContent;
   clarificationOptions?: ClarificationOption[];

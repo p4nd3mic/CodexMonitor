@@ -48,19 +48,14 @@ export function LifeStreamView({ workspaceId }: LifeStreamViewProps) {
   }, [filterStorageKey]);
 
   const toggleFilter = useCallback((domain: DomainId) => {
-    setActiveFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(domain)) {
-        next.delete(domain);
-      } else {
-        next.add(domain);
-      }
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(filterStorageKey, JSON.stringify(Array.from(next)));
-      }
-      return next;
-    });
-  }, [filterStorageKey]);
+    const next = new Set(activeFilters);
+    if (next.has(domain)) {
+      next.delete(domain);
+    } else {
+      next.add(domain);
+    }
+    persistFilters(next);
+  }, [activeFilters, persistFilters]);
 
   const clearFilters = useCallback(() => {
     persistFilters(new Set());

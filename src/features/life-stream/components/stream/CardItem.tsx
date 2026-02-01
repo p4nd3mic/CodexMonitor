@@ -39,13 +39,17 @@ export function CardItem({ cardId, onCancel, onRetry, onClarify }: CardItemProps
     }
   }, [card?.expanded, card?.state]);
 
-  if (!card) return null;
-
-  const timeLabel = useMemo(() => formatTime(card.occurredAt), [card.occurredAt]);
-  const canCancel = card.state === "pending" || card.state === "processing" || card.state === "awaiting_input";
-  const canRetry = card.state === "error";
-  const canExpand = card.state === "complete" && Boolean(card.expanded);
-  const clarificationOptions = card.clarificationOptions ?? [];
+  const timeLabel = useMemo(
+    () => (card ? formatTime(card.occurredAt) : ""),
+    [card?.occurredAt],
+  );
+  const canCancel =
+    card?.state === "pending" ||
+    card?.state === "processing" ||
+    card?.state === "awaiting_input";
+  const canRetry = card?.state === "error";
+  const canExpand = card?.state === "complete" && Boolean(card?.expanded);
+  const clarificationOptions = card?.clarificationOptions ?? [];
 
   const toggleExpanded = useCallback(() => {
     if (!canExpand) return;
@@ -53,8 +57,11 @@ export function CardItem({ cardId, onCancel, onRetry, onClarify }: CardItemProps
   }, [canExpand]);
 
   const handleClarify = useCallback((option: ClarificationOption) => {
+    if (!card) return;
     onClarify(card.id, option.id);
-  }, [card.id, onClarify]);
+  }, [card, onClarify]);
+
+  if (!card) return null;
 
   return (
     <article

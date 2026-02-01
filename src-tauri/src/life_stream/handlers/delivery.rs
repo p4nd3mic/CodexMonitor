@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::Deserialize;
 use tokio::fs;
 
-use crate::life_stream::types::EntityRef;
+use crate::life_stream::types::{CardStatValue, EntityRef};
 
 #[derive(Debug, Clone, Deserialize)]
 struct MerchantIndex {
@@ -74,51 +74,60 @@ impl DeliveryHandler {
         if let Some(value) = payout {
             stats.insert(
                 "payout".to_string(),
-                serde_json::json!(format!("${:.2}", value)),
+                CardStatValue::String(format!("${:.2}", value)),
             );
         }
         if let Some(value) = miles {
             stats.insert(
                 "miles".to_string(),
-                serde_json::json!(format!("{:.1} mi", value)),
+                CardStatValue::String(format!("{:.1} mi", value)),
             );
         }
         if let Some(value) = per_mile {
             stats.insert(
                 "per_mile".to_string(),
-                serde_json::json!(format!("${:.2}/mi", value)),
+                CardStatValue::String(format!("${:.2}/mi", value)),
             );
         }
         if let Some(value) = acceptance_rate {
             stats.insert(
                 "ar".to_string(),
-                serde_json::json!(format!("{:.0}%", value)),
+                CardStatValue::String(format!("{:.0}%", value)),
             );
         }
 
         if let Some((_name, info)) = &merchant_match {
             if let Some(tier) = &info.tier {
-                stats.insert("merchant_tier".to_string(), serde_json::json!(tier));
+                stats.insert(
+                    "merchant_tier".to_string(),
+                    CardStatValue::String(tier.clone()),
+                );
             }
             if let Some(wait) = info.avg_wait_mins {
                 stats.insert(
                     "avg_wait".to_string(),
-                    serde_json::json!(format!("{:.0} min", wait)),
+                    CardStatValue::String(format!("{:.0} min", wait)),
                 );
             }
             if let Some(avg_per_mile) = info.avg_per_mile {
                 stats.insert(
                     "merchant_avg".to_string(),
-                    serde_json::json!(format!("${:.2}/mi", avg_per_mile)),
+                    CardStatValue::String(format!("${:.2}/mi", avg_per_mile)),
                 );
             }
             if let Some(last_seen) = &info.last_seen {
-                stats.insert("last_seen".to_string(), serde_json::json!(last_seen));
+                stats.insert(
+                    "last_seen".to_string(),
+                    CardStatValue::String(last_seen.clone()),
+                );
             }
         }
 
         if stats.is_empty() {
-            stats.insert("entry".to_string(), serde_json::json!("delivery"));
+            stats.insert(
+                "entry".to_string(),
+                CardStatValue::String("delivery".to_string()),
+            );
         }
 
         let entities = merchant_match.map(|(name, _)| {
@@ -216,7 +225,7 @@ pub struct ProcessedDelivery {
     pub title: String,
     pub subtitle: Option<String>,
     pub summary: Option<String>,
-    pub stats: Option<HashMap<String, serde_json::Value>>,
+    pub stats: Option<HashMap<String, CardStatValue>>,
     pub entities: Option<Vec<EntityRef>>,
 }
 

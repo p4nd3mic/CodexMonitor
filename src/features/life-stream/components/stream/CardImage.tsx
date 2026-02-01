@@ -27,10 +27,6 @@ export function CardImage({
   className,
   onRequestUpload,
 }: CardImageProps) {
-  if (!image) {
-    return null;
-  }
-
   const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
@@ -48,6 +44,10 @@ export function CardImage({
     }
     return convertFileSrc(image.url);
   }, [image?.url]);
+
+  if (!image) {
+    return null;
+  }
 
   return (
     <div

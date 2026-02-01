@@ -162,6 +162,7 @@ pub fn run() {
             life_stream::life_stream_submit,
             life_stream::life_stream_cancel,
             life_stream::life_stream_retry,
+            life_stream::life_stream_clarify,
             prompts::prompts_global_dir,
             memory_commands::memory_status,
             memory_commands::memory_search,

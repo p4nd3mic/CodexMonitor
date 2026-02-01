@@ -1,10 +1,13 @@
 mod events;
 mod handlers;
 mod images;
+mod mcp_bridge;
 mod obsidian;
 mod service;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod service_test;
 mod types;
 
 pub use service::LifeStreamService;

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::life_stream::types::EntityRef;
+use crate::life_stream::service::truncate;
+use crate::life_stream::types::{CardStatValue, EntityRef};
 
 pub struct ThoughtHandler;
 
@@ -11,12 +12,10 @@ impl ThoughtHandler {
 
     pub async fn process(&self, input: &str) -> Result<ProcessedThought, String> {
         let trimmed = input.trim();
-        let title = if trimmed.len() > 64 {
-            format!("{}...", &trimmed[..64])
-        } else if trimmed.is_empty() {
+        let title = if trimmed.is_empty() {
             "Thought".to_string()
         } else {
-            trimmed.to_string()
+            truncate(trimmed, 64)
         };
 
         let summary = if trimmed.is_empty() {
@@ -29,7 +28,7 @@ impl ThoughtHandler {
         if !trimmed.is_empty() {
             stats.insert(
                 "chars".to_string(),
-                serde_json::json!(trimmed.chars().count()),
+                CardStatValue::Integer(trimmed.chars().count() as i64),
             );
         }
 
@@ -47,6 +46,6 @@ pub struct ProcessedThought {
     pub title: String,
     pub subtitle: Option<String>,
     pub summary: Option<String>,
-    pub stats: Option<HashMap<String, serde_json::Value>>,
+    pub stats: Option<HashMap<String, CardStatValue>>,
     pub entities: Option<Vec<EntityRef>>,
 }

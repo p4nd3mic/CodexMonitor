@@ -39,11 +39,23 @@ impl ImageService {
 
         match result {
             Ok(Some(image_data)) => {
-                let path = self.cache.save(card_type, entity_name, &image_data);
-                CardImage {
-                    url: Some(path.to_string_lossy().to_string()),
-                    status: ImageStatus::Ready,
-                    source: Some("fetched".to_string()),
+                match self.cache.save(card_type, entity_name, &image_data) {
+                    Ok(path) => CardImage {
+                        url: Some(path.to_string_lossy().to_string()),
+                        status: ImageStatus::Ready,
+                        source: Some("fetched".to_string()),
+                    },
+                    Err(err) => {
+                        eprintln!(
+                            "Failed to cache image for {} ({}): {}",
+                            card_type, entity_name, err
+                        );
+                        CardImage {
+                            url: None,
+                            status: ImageStatus::Missing,
+                            source: Some(format!("cache error: {err}")),
+                        }
+                    }
                 }
             }
             Ok(None) => CardImage {

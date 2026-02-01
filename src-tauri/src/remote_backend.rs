@@ -216,6 +216,9 @@ async fn read_loop(
             "terminal-output" => {
                 let _ = app.emit("terminal-output", params);
             }
+            "life_stream_event" => {
+                let _ = app.emit("life_stream_event", params);
+            }
             _ => {}
         }
     }

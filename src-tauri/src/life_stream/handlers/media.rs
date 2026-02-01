@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use regex::Regex;
 use serde::Deserialize;
 use tokio::fs;
 
-use crate::life_stream::types::EntityRef;
+use crate::life_stream::service::truncate;
+use crate::life_stream::types::{CardStatValue, EntityRef};
 
 #[derive(Debug, Clone, Deserialize)]
 struct MediaEntity {
@@ -32,11 +34,12 @@ impl MediaHandler {
     pub async fn process(&self, input: &str, occurred_at: &str) -> Result<ProcessedMedia, String> {
         let entities = self.extract_media_entities(input).await?;
         let time_label = occurred_at.get(11..16).unwrap_or("??:??");
+        let rating = Self::extract_rating(input);
 
         let title = if entities.len() == 1 {
             entities[0].title.clone()
         } else if entities.is_empty() {
-            format!("Media log {}", time_label)
+            Self::parse_title_from_input(input, time_label)
         } else {
             format!("Media log {}", time_label)
         };
@@ -59,7 +62,16 @@ impl MediaHandler {
 
         let mut stats = HashMap::new();
         if !entities.is_empty() {
-            stats.insert("items".to_string(), serde_json::json!(entities.len()));
+            stats.insert(
+                "items".to_string(),
+                CardStatValue::Integer(entities.len() as i64),
+            );
+        }
+        if let Some(rating) = rating {
+            stats.insert(
+                "rating".to_string(),
+                CardStatValue::String(format!("{}/10", rating)),
+            );
         }
 
         let mut entity_refs = Vec::new();
@@ -169,12 +181,61 @@ impl MediaHandler {
             creator,
         })
     }
+
+    fn extract_rating(input: &str) -> Option<u8> {
+        let rating_re = Regex::new(r"(\\d+)\\s*(?:/\\s*10)?").ok()?;
+        rating_re
+            .captures(&input.to_lowercase())
+            .and_then(|c| c.get(1)?.as_str().parse::<u8>().ok())
+            .filter(|&r| r <= 10)
+    }
+
+    fn parse_title_from_input(input: &str, time_label: &str) -> String {
+        let title = input
+            .split_whitespace()
+            .filter(|word| {
+                let lower = word.to_lowercase();
+                !matches!(
+                    lower.as_str(),
+                    "movie"
+                        | "film"
+                        | "show"
+                        | "series"
+                        | "anime"
+                        | "game"
+                        | "book"
+                        | "watched"
+                        | "played"
+                        | "read"
+                        | "rating"
+                )
+            })
+            .filter(|word| {
+                !word
+                    .parse::<u8>()
+                    .map(|n| n <= 10)
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if title.is_empty() {
+            let fallback = truncate(input, 50);
+            if fallback.is_empty() {
+                format!("Media log {}", time_label)
+            } else {
+                fallback
+            }
+        } else {
+            title
+        }
+    }
 }
 
 pub struct ProcessedMedia {
     pub title: String,
     pub subtitle: Option<String>,
     pub summary: Option<String>,
-    pub stats: Option<HashMap<String, serde_json::Value>>,
+    pub stats: Option<HashMap<String, CardStatValue>>,
     pub entities: Option<Vec<EntityRef>>,
 }

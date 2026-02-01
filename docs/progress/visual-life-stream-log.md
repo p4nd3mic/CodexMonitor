@@ -49,3 +49,14 @@
 - ✅ Ran `npm run tauri dev` (Vite + Tauri compiled; existing warnings). Stopped after verifying dev build start.
 - ✅ Re-ran `cargo test --manifest-path src-tauri/Cargo.toml` after cleanup (warnings remain).
 - ✅ Re-ran `npm test` after UI tweak (same warnings as before).
+
+### Phase 4 Update 2026-02-01
+- ✅ Critical fixes: registered life_stream_clarify, safe UTF-8 truncate everywhere, cache path traversal prevention, XSS removal in ExpandedCard, React hook order fixes in CardImage/CardItem.
+- ✅ Important fixes: handler modularization in service, cache save error propagation + logging, CardStatValue type alignment (Rust/TS), CardErrorBoundary, filter persistence refactor.
+- ✅ New features: life-mcp bridge (stdio JSON-RPC), desktop voice input composer + CSS, remote backend RPC/event wiring.
+- ✅ Tests added/updated: life_stream service tests (truncate/card state/domain detection), streamStore vitest, intent detection keywords for watch/thinking.
+- ✅ Ran `cargo test --manifest-path src-tauri/Cargo.toml` (warnings only).
+- ✅ Ran `npm test` (warnings: localstorage-file path, SettingsView act warnings, missing tauri invoke in tests).
+- ✅ Ran `npm run lint` (warnings only).
+- ✅ Ran `npm run build` (chunk size warning only).
+- ✅ Ran `npm run tauri dev` (Vite + Tauri compiled; warnings unchanged). Stopped after verifying dev build start.

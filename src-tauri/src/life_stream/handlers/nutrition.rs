@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::Deserialize;
 use tokio::fs;
 
-use crate::life_stream::types::EntityRef;
+use crate::life_stream::types::{CardStatValue, EntityRef};
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub(crate) struct FoodEntity {
@@ -55,24 +55,24 @@ impl NutritionHandler {
         let mut stats = HashMap::new();
         stats.insert(
             "calories".to_string(),
-            serde_json::json!(total_calories.round() as i64),
+            CardStatValue::Integer(total_calories.round() as i64),
         );
         stats.insert(
             "protein".to_string(),
-            serde_json::json!(format!("{}g", total_protein.round() as i64)),
+            CardStatValue::String(format!("{}g", total_protein.round() as i64)),
         );
         stats.insert(
             "carbs".to_string(),
-            serde_json::json!(format!("{}g", total_carbs.round() as i64)),
+            CardStatValue::String(format!("{}g", total_carbs.round() as i64)),
         );
         stats.insert(
             "fat".to_string(),
-            serde_json::json!(format!("{}g", total_fat.round() as i64)),
+            CardStatValue::String(format!("{}g", total_fat.round() as i64)),
         );
         if total_fiber > 0.0 {
             stats.insert(
                 "fiber".to_string(),
-                serde_json::json!(format!("{}g", total_fiber.round() as i64)),
+                CardStatValue::String(format!("{}g", total_fiber.round() as i64)),
             );
         }
 
@@ -191,6 +191,6 @@ pub struct ProcessedMeal {
     pub foods: Vec<FoodEntity>,
     pub title: String,
     pub subtitle: Option<String>,
-    pub stats: Option<HashMap<String, serde_json::Value>>,
+    pub stats: Option<HashMap<String, CardStatValue>>,
     pub entities: Option<Vec<EntityRef>>,
 }

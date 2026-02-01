@@ -11,10 +11,7 @@ function renderSection(section: ExpandedSection) {
   return (
     <div key={section.title} className="life-stream-card-expanded__section">
       <div className="life-stream-card-expanded__title">{section.title}</div>
-      <div
-        className="life-stream-card-expanded__body"
-        dangerouslySetInnerHTML={{ __html: section.body }}
-      />
+      <div className="life-stream-card-expanded__body">{section.body}</div>
     </div>
   );
 }

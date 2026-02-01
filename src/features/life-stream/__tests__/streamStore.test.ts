@@ -87,4 +87,50 @@ describe("streamStore", () => {
     streamStore.updateCard("card-a", { title: "A++" }, 3);
     expect(listener).toHaveBeenCalledTimes(1);
   });
+
+  it("filters snapshots by current date", () => {
+    const dayA = makeCard({ id: "card-day-a", occurredAt: "2026-01-20T10:00:00" });
+    const dayB = makeCard({ id: "card-day-b", occurredAt: "2026-01-21T10:00:00" });
+    streamStore.loadCards([dayA, dayB]);
+
+    streamStore.setDate("2026-01-21");
+    expect(streamStore.getSnapshot().map((card) => card.id)).toEqual(["card-day-b"]);
+  });
+
+  it("handles event updates and respects version ordering", () => {
+    const card = makeCard({ id: "card-event", state: "pending", version: 1 });
+    streamStore.handleEvent({ type: "card_created", card });
+
+    streamStore.handleEvent({
+      type: "card_step",
+      cardId: "card-event",
+      step: "Processing",
+      version: 2,
+    });
+    expect(streamStore.getCard("card-event")?.processingStep).toBe("Processing");
+
+    streamStore.handleEvent({
+      type: "card_updated",
+      cardId: "card-event",
+      patch: { state: "processing" },
+      version: 3,
+    });
+    expect(streamStore.getCard("card-event")?.state).toBe("processing");
+
+    streamStore.handleEvent({
+      type: "card_updated",
+      cardId: "card-event",
+      patch: { state: "pending" },
+      version: 2,
+    });
+    expect(streamStore.getCard("card-event")?.state).toBe("processing");
+
+    streamStore.handleEvent({
+      type: "card_error",
+      cardId: "card-event",
+      message: "oops",
+      version: 4,
+    });
+    expect(streamStore.getCard("card-event")?.state).toBe("error");
+  });
 });

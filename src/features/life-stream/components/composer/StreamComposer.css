@@ -1,0 +1,149 @@
+.life-stream-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.life-stream-composer__form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.life-stream-composer__input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  background: var(--bg-secondary, #2a2a2a);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 8px;
+  color: var(--text-primary, #fff);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.life-stream-composer__input:focus {
+  outline: none;
+  border-color: var(--accent-color, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.life-stream-composer__input--listening {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+
+.life-stream-composer__input::placeholder {
+  color: var(--text-secondary, #888);
+}
+
+.life-stream-composer__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.life-stream-composer__mic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: 1px solid var(--border-color, #444);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.life-stream-composer__mic:hover:not(:disabled) {
+  background: var(--bg-secondary, #2a2a2a);
+  border-color: var(--accent-color, #3b82f6);
+}
+
+.life-stream-composer__mic--active {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
+
+.life-stream-composer__mic:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.life-stream-composer__mic-icon {
+  font-size: 1.25rem;
+}
+
+.life-stream-composer__mic--active .life-stream-composer__mic-icon {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.life-stream-composer__submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: var(--accent-color, #3b82f6);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 1.25rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.life-stream-composer__submit:hover:not(:disabled) {
+  background: var(--accent-hover, #2563eb);
+  transform: translateX(2px);
+}
+
+.life-stream-composer__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.life-stream-composer__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 480px) {
+  .life-stream-composer {
+    padding: 0.75rem;
+  }
+
+  .life-stream-composer__input {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.9375rem;
+  }
+
+  .life-stream-composer__mic,
+  .life-stream-composer__submit {
+    width: 40px;
+    height: 40px;
+  }
+}

@@ -6,8 +6,14 @@ use regex::Regex;
 use tauri::Emitter;
 use tokio::sync::{Mutex, Semaphore};
 
+use super::handlers::code_task::CodeTaskHandler;
+use super::handlers::delivery::DeliveryHandler;
+use super::handlers::media::MediaHandler;
 use super::handlers::nutrition::NutritionHandler;
+use super::handlers::query::QueryHandler;
+use super::handlers::thought::ThoughtHandler;
 use super::images::ImageService;
+use super::mcp_bridge::LifeMcpBridge;
 use super::obsidian::ObsidianIO;
 use super::types::*;
 
@@ -18,7 +24,9 @@ pub struct LifeStreamService {
     cancelled_cards: Arc<Mutex<HashSet<String>>>,
     obsidian: ObsidianIO,
     tmdb_api_key: Option<String>,
+    mcp_bridge: LifeMcpBridge,
     emitter: Option<tauri::AppHandle>,
+    event_sink: Option<Arc<dyn Fn(LifeStreamEvent) + Send + Sync>>,
 }
 
 impl LifeStreamService {
@@ -30,12 +38,21 @@ impl LifeStreamService {
             cancelled_cards: Arc::new(Mutex::new(HashSet::new())),
             obsidian: ObsidianIO::new(obsidian_root),
             tmdb_api_key,
+            mcp_bridge: LifeMcpBridge::from_env(),
             emitter: None,
+            event_sink: None,
         }
     }
 
     pub fn set_emitter(&mut self, app: tauri::AppHandle) {
         self.emitter = Some(app);
+    }
+
+    pub fn set_event_sink<F>(&mut self, sink: F)
+    where
+        F: Fn(LifeStreamEvent) + Send + Sync + 'static,
+    {
+        self.event_sink = Some(Arc::new(sink));
     }
 
     pub async fn load_day(
@@ -124,6 +141,7 @@ impl LifeStreamService {
             },
             &self.cards,
             &self.emitter,
+            &self.event_sink,
         )
         .await
         .ok_or("card not found")?;
@@ -167,6 +185,7 @@ impl LifeStreamService {
             },
             &self.cards,
             &self.emitter,
+            &self.event_sink,
         )
         .await
         .ok_or("card not found")?;
@@ -214,6 +233,7 @@ impl LifeStreamService {
             },
             &self.cards,
             &self.emitter,
+            &self.event_sink,
         )
         .await
         .ok_or("card not found")?;
@@ -234,7 +254,10 @@ impl LifeStreamService {
 
     fn emit_event(&self, event: LifeStreamEvent) {
         if let Some(app) = &self.emitter {
-            let _ = app.emit("life_stream_event", event);
+            let _ = app.emit("life_stream_event", event.clone());
+        }
+        if let Some(sink) = &self.event_sink {
+            sink(event);
         }
     }
 
@@ -254,8 +277,10 @@ impl LifeStreamService {
         let write_locks = Arc::clone(&self.write_locks);
         let obsidian = self.obsidian.clone();
         let emitter = self.emitter.clone();
+        let event_sink = self.event_sink.clone();
         let cancelled_cards = Arc::clone(&self.cancelled_cards);
         let clarification = clarification.clone();
+        let mcp_bridge = self.mcp_bridge.clone();
 
         tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
@@ -277,6 +302,7 @@ impl LifeStreamService {
                 },
                 &cards,
                 &emitter,
+                &event_sink,
             )
             .await;
 
@@ -291,7 +317,9 @@ impl LifeStreamService {
                 &lock,
                 &obsidian,
                 &emitter,
+                &event_sink,
                 &cancelled_cards,
+                &mcp_bridge,
                 tmdb_api_key.as_deref(),
             )
             .await;
@@ -306,15 +334,16 @@ impl LifeStreamService {
                     card.error_message = Some(e.clone());
                     card.version += 1;
 
+                    let event = LifeStreamEvent::CardError {
+                        card_id: card_id.clone(),
+                        message: e,
+                        version: card.version,
+                    };
                     if let Some(app) = &emitter {
-                        let _ = app.emit(
-                            "life_stream_event",
-                            LifeStreamEvent::CardError {
-                                card_id: card_id.clone(),
-                                message: e,
-                                version: card.version,
-                            },
-                        );
+                        let _ = app.emit("life_stream_event", event.clone());
+                    }
+                    if let Some(sink) = &event_sink {
+                        sink(event);
                     }
                 }
             }
@@ -327,6 +356,7 @@ async fn emit_patch(
     patch: StreamCardPatch,
     cards: &Arc<Mutex<HashMap<String, StreamCard>>>,
     emitter: &Option<tauri::AppHandle>,
+    event_sink: &Option<Arc<dyn Fn(LifeStreamEvent) + Send + Sync>>,
 ) -> Option<u32> {
     let version = {
         let mut cards_guard = cards.lock().await;
@@ -337,15 +367,17 @@ async fn emit_patch(
         card.version
     };
 
+    let event = LifeStreamEvent::CardUpdated {
+        card_id: card_id.to_string(),
+        patch,
+        version,
+    };
+
     if let Some(app) = emitter {
-        let _ = app.emit(
-            "life_stream_event",
-            LifeStreamEvent::CardUpdated {
-                card_id: card_id.to_string(),
-                patch,
-                version,
-            },
-        );
+        let _ = app.emit("life_stream_event", event.clone());
+    }
+    if let Some(sink) = event_sink {
+        sink(event);
     }
 
     Some(version)
@@ -377,11 +409,7 @@ fn apply_patch_to_card(card: &mut StreamCard, patch: &StreamCardPatch) {
         }
     }
     if let Some(stats) = &patch.stats {
-        let mut mapped = HashMap::new();
-        for (key, value) in stats {
-            mapped.insert(key.clone(), card_stat_value_to_json(value.clone()));
-        }
-        card.stats = Some(mapped);
+        card.stats = Some(stats.clone());
     }
     if let Some(image) = &patch.image {
         card.image = Some(image.clone());
@@ -398,14 +426,6 @@ fn apply_patch_to_card(card: &mut StreamCard, patch: &StreamCardPatch) {
     }
 }
 
-fn card_stat_value_to_json(value: CardStatValue) -> serde_json::Value {
-    match value {
-        CardStatValue::String(value) => serde_json::json!(value),
-        CardStatValue::Integer(value) => serde_json::json!(value),
-        CardStatValue::Float(value) => serde_json::json!(value),
-    }
-}
-
 async fn process_card(
     card_id: &str,
     workspace_path: &str,
@@ -417,13 +437,15 @@ async fn process_card(
     write_lock: &Arc<Mutex<()>>,
     obsidian: &ObsidianIO,
     emitter: &Option<tauri::AppHandle>,
+    event_sink: &Option<Arc<dyn Fn(LifeStreamEvent) + Send + Sync>>,
     cancelled_cards: &Arc<Mutex<HashSet<String>>>,
+    mcp_bridge: &LifeMcpBridge,
     tmdb_api_key: Option<&str>,
 ) -> Result<(), String> {
     if is_cancelled(card_id, cancelled_cards).await {
         return Ok(());
     }
-    emit_step(card_id, "Detecting intent...", cards, emitter).await;
+    emit_step(card_id, "Detecting intent...", cards, emitter, event_sink).await;
     let (card_type, domain, emoji) = detect_intent(input);
 
     if is_cancelled(card_id, cancelled_cards).await {
@@ -434,6 +456,7 @@ async fn process_card(
         &format!("Processing as {:?}...", domain),
         cards,
         emitter,
+        event_sink,
     )
     .await;
 
@@ -441,9 +464,9 @@ async fn process_card(
         return Ok(());
     }
 
-    let enriched = match card_type {
+    let mut enriched = match card_type {
         CardType::Meal => {
-            emit_step(card_id, "Looking up nutrition...", cards, emitter).await;
+            emit_step(card_id, "Looking up nutrition...", cards, emitter, event_sink).await;
             match handle_nutrition(
                 card_id,
                 input,
@@ -454,6 +477,7 @@ async fn process_card(
                 obsidian,
                 cards,
                 emitter,
+                event_sink,
             )
             .await?
             {
@@ -461,8 +485,12 @@ async fn process_card(
                 None => return Ok(()),
             }
         }
-        CardType::DeliveryOrder => handle_delivery(input).await?,
-        CardType::MediaAdd => handle_media(input).await?,
+        CardType::DeliveryOrder => {
+            handle_delivery(input, occurred_at, workspace_path, obsidian_root, obsidian).await?
+        }
+        CardType::MediaAdd => {
+            handle_media(input, occurred_at, workspace_path, obsidian_root, obsidian).await?
+        }
         CardType::Thought => handle_thought(input).await?,
         CardType::Query => handle_query(input).await?,
         CardType::CodeTask => handle_code_task(input).await?,
@@ -472,7 +500,25 @@ async fn process_card(
     if is_cancelled(card_id, cancelled_cards).await {
         return Ok(());
     }
-    emit_step(card_id, "Saving...", cards, emitter).await;
+
+    if let Some(mcp_output) = maybe_call_mcp_tool(
+        mcp_bridge,
+        card_id,
+        &card_type,
+        input,
+        cards,
+        emitter,
+        event_sink,
+    )
+    .await
+    {
+        apply_mcp_output(&mut enriched, mcp_output, input);
+    }
+
+    if is_cancelled(card_id, cancelled_cards).await {
+        return Ok(());
+    }
+    emit_step(card_id, "Saving...", cards, emitter, event_sink).await;
     {
         let _guard = write_lock.lock().await;
         obsidian
@@ -506,11 +552,12 @@ async fn process_card(
         card.clarification_options = None;
         card.version += 1;
 
+        let event = LifeStreamEvent::CardCompleted { card: card.clone() };
         if let Some(app) = emitter {
-            let _ = app.emit(
-                "life_stream_event",
-                LifeStreamEvent::CardCompleted { card: card.clone() },
-            );
+            let _ = app.emit("life_stream_event", event.clone());
+        }
+        if let Some(sink) = event_sink {
+            sink(event);
         }
     }
 
@@ -518,6 +565,7 @@ async fn process_card(
         if let Some(root) = obsidian_root {
             let cards = Arc::clone(cards);
             let emitter = emitter.clone();
+            let event_sink = event_sink.clone();
             let card_id = card_id.to_string();
             let tmdb_key = tmdb_api_key.map(|value| value.to_string());
             let root = PathBuf::from(root);
@@ -534,6 +582,7 @@ async fn process_card(
                     },
                     &cards,
                     &emitter,
+                    &event_sink,
                 )
                 .await;
             });
@@ -548,6 +597,7 @@ async fn emit_step(
     step: &str,
     cards: &Arc<Mutex<HashMap<String, StreamCard>>>,
     emitter: &Option<tauri::AppHandle>,
+    event_sink: &Option<Arc<dyn Fn(LifeStreamEvent) + Send + Sync>>,
 ) {
     let version = {
         let mut cards_guard = cards.lock().await;
@@ -562,16 +612,222 @@ async fn emit_step(
         }
     };
 
+    let event = LifeStreamEvent::CardStep {
+        card_id: card_id.to_string(),
+        step: step.to_string(),
+        version,
+    };
     if let Some(app) = emitter {
-        let _ = app.emit(
-            "life_stream_event",
-            LifeStreamEvent::CardStep {
-                card_id: card_id.to_string(),
-                step: step.to_string(),
-                version,
-            },
-        );
+        let _ = app.emit("life_stream_event", event.clone());
     }
+    if let Some(sink) = event_sink {
+        sink(event);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct McpToolOutput {
+    tool: String,
+    text: Option<String>,
+    raw: serde_json::Value,
+}
+
+async fn maybe_call_mcp_tool(
+    mcp_bridge: &LifeMcpBridge,
+    card_id: &str,
+    card_type: &CardType,
+    input: &str,
+    cards: &Arc<Mutex<HashMap<String, StreamCard>>>,
+    emitter: &Option<tauri::AppHandle>,
+    event_sink: &Option<Arc<dyn Fn(LifeStreamEvent) + Send + Sync>>,
+) -> Option<McpToolOutput> {
+    if !mcp_bridge.is_enabled() {
+        return None;
+    }
+
+    let (tool, params) = mcp_tool_for_card(card_type, input)?;
+
+    emit_step(card_id, "Syncing with life-mcp...", cards, emitter, event_sink).await;
+
+    let Ok(result) = mcp_bridge.call_tool(&tool, params).await else {
+        return None;
+    };
+    let Some(raw) = result else {
+        return None;
+    };
+
+    let text = extract_mcp_text(&raw);
+
+    Some(McpToolOutput { tool, text, raw })
+}
+
+fn mcp_tool_for_card(
+    card_type: &CardType,
+    input: &str,
+) -> Option<(String, serde_json::Value)> {
+    match card_type {
+        CardType::Meal => {
+            let mut payload = serde_json::json!({ "input": input });
+            if let Some(meal_type) = infer_meal_type(input) {
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert("meal_type".to_string(), serde_json::json!(meal_type));
+                }
+            }
+            Some(("log_meal_quick".to_string(), payload))
+        }
+        CardType::DeliveryOrder => Some((
+            "advise_order".to_string(),
+            serde_json::json!({ "stt_text": input, "format": "text" }),
+        )),
+        CardType::MediaAdd => {
+            let title = parse_media_title(input);
+            if title.is_empty() {
+                return None;
+            }
+            let mut payload = serde_json::json!({
+                "title": title,
+                "type": infer_media_type(input),
+            });
+            if let Some(rating) = parse_media_rating(input) {
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert("rating".to_string(), serde_json::json!(rating));
+                }
+            }
+            Some(("media_add".to_string(), payload))
+        }
+        _ => None,
+    }
+}
+
+fn infer_meal_type(input: &str) -> Option<&'static str> {
+    let lower = input.to_lowercase();
+    if lower.contains("breakfast") {
+        Some("breakfast")
+    } else if lower.contains("lunch") {
+        Some("lunch")
+    } else if lower.contains("dinner") {
+        Some("dinner")
+    } else if lower.contains("snack") {
+        Some("snack")
+    } else {
+        None
+    }
+}
+
+fn parse_media_title(input: &str) -> String {
+    input
+        .split_whitespace()
+        .filter(|word| {
+            let lower = word.to_lowercase();
+            !matches!(
+                lower.as_str(),
+                "movie"
+                    | "film"
+                    | "show"
+                    | "series"
+                    | "tv"
+                    | "anime"
+                    | "game"
+                    | "book"
+                    | "watched"
+                    | "played"
+                    | "read"
+                    | "rating"
+            )
+        })
+        .filter(|word| !word.parse::<u8>().map(|n| n <= 10).unwrap_or(false))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn parse_media_rating(input: &str) -> Option<u8> {
+    let lower = input.to_lowercase();
+    let rating_re = Regex::new(r"(\\d+)\\s*(?:/\\s*10)?").ok()?;
+    rating_re
+        .captures(&lower)
+        .and_then(|c| c.get(1)?.as_str().parse::<u8>().ok())
+        .filter(|&rating| rating <= 10)
+}
+
+fn infer_media_type(input: &str) -> &'static str {
+    let lower = input.to_lowercase();
+    if lower.contains("anime") {
+        "anime"
+    } else if lower.contains("animation") {
+        "animation"
+    } else if lower.contains("comic") {
+        "comic"
+    } else if lower.contains("youtube") {
+        "youtube"
+    } else if lower.contains("book") || lower.contains("read") {
+        "book"
+    } else if lower.contains("game") || lower.contains("played") {
+        "game"
+    } else if lower.contains("show") || lower.contains("series") || lower.contains("tv") {
+        "tv"
+    } else {
+        "film"
+    }
+}
+
+fn extract_mcp_text(value: &serde_json::Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+
+    if let Some(text) = value.get("text").and_then(|value| value.as_str()) {
+        return Some(text.to_string());
+    }
+
+    let content = value.get("content")?;
+    if let Some(array) = content.as_array() {
+        let mut parts = Vec::new();
+        for item in array {
+            if let Some(text) = item.get("text").and_then(|value| value.as_str()) {
+                parts.push(text.to_string());
+            }
+        }
+        if !parts.is_empty() {
+            return Some(parts.join("\n"));
+        }
+    } else if let Some(text) = content.get("text").and_then(|value| value.as_str()) {
+        return Some(text.to_string());
+    }
+
+    None
+}
+
+fn apply_mcp_output(enriched: &mut EnrichedData, output: McpToolOutput, input: &str) {
+    let text = output
+        .text
+        .unwrap_or_else(|| output.raw.to_string());
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    if enriched.summary.is_none() {
+        enriched.summary = Some(truncate_summary(trimmed, 160));
+    }
+
+    let section = ExpandedSection {
+        title: format!("life-mcp ({})", output.tool),
+        body: text,
+    };
+
+    let expanded = enriched
+        .expanded
+        .get_or_insert_with(|| base_expanded(input));
+    expanded.sections.push(section);
+}
+
+fn truncate_summary(text: &str, max: usize) -> String {
+    let line = text.lines().next().unwrap_or(text);
+    if line.chars().count() <= max {
+        return line.to_string();
+    }
+    let truncated: String = line.chars().take(max).collect();
+    format!("{truncated}...")
 }
 
 pub(crate) fn detect_intent(input: &str) -> (CardType, DomainId, String) {
@@ -614,7 +870,17 @@ pub(crate) fn detect_intent(input: &str) -> (CardType, DomainId, String) {
     }
 
     let media_keywords = [
-        "watched", "movie", "show", "anime", "film", "played", "game", "read", "book",
+        "watched",
+        "watching",
+        "watch",
+        "movie",
+        "show",
+        "anime",
+        "film",
+        "played",
+        "game",
+        "read",
+        "book",
     ];
     if media_keywords.iter().any(|kw| lower.contains(kw)) {
         return (CardType::MediaAdd, DomainId::Media, "🎬".to_string());
@@ -664,7 +930,12 @@ pub(crate) fn detect_intent(input: &str) -> (CardType, DomainId, String) {
         return (CardType::Query, DomainId::General, "🔍".to_string());
     }
 
-    if lower.contains("thought") || lower.contains("idea") || lower.contains("feeling") {
+    if lower.contains("thought")
+        || lower.contains("thinking")
+        || lower.contains("think")
+        || lower.contains("idea")
+        || lower.contains("feeling")
+    {
         return (CardType::Thought, DomainId::General, "💭".to_string());
     }
 
@@ -672,18 +943,18 @@ pub(crate) fn detect_intent(input: &str) -> (CardType, DomainId, String) {
 }
 
 pub(crate) fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        return s.to_string();
+    if max == 0 {
+        return String::new();
     }
 
-    let end = s
-        .char_indices()
-        .take_while(|(i, _)| *i < max)
-        .last()
-        .map(|(i, c)| i + c.len_utf8())
-        .unwrap_or(0);
+    let mut iter = s.chars();
+    let truncated: String = iter.by_ref().take(max).collect();
 
-    format!("{}...", &s[..end])
+    if truncated.chars().count() < s.chars().count() {
+        truncated
+    } else {
+        s.to_string()
+    }
 }
 
 async fn handle_nutrition(
@@ -696,6 +967,7 @@ async fn handle_nutrition(
     obsidian: &ObsidianIO,
     cards: &Arc<Mutex<HashMap<String, StreamCard>>>,
     emitter: &Option<tauri::AppHandle>,
+    event_sink: &Option<Arc<dyn Fn(LifeStreamEvent) + Send + Sync>>,
 ) -> Result<Option<EnrichedData>, String> {
     let root = obsidian
         .resolve_root_path(workspace_path, obsidian_root)
@@ -756,6 +1028,7 @@ async fn handle_nutrition(
                     ],
                     cards,
                     emitter,
+                    event_sink,
                 )
                 .await;
                 return Ok(None);
@@ -790,6 +1063,7 @@ async fn request_clarification(
     options: Vec<ClarificationOption>,
     cards: &Arc<Mutex<HashMap<String, StreamCard>>>,
     emitter: &Option<tauri::AppHandle>,
+    event_sink: &Option<Arc<dyn Fn(LifeStreamEvent) + Send + Sync>>,
 ) {
     let _ = emit_patch(
         card_id,
@@ -801,6 +1075,7 @@ async fn request_clarification(
         },
         cards,
         emitter,
+        event_sink,
     )
     .await;
 }
@@ -818,202 +1093,134 @@ async fn handle_generic(input: &str) -> Result<EnrichedData, String> {
     })
 }
 
-async fn handle_delivery(input: &str) -> Result<EnrichedData, String> {
-    let amount_re = Regex::new(r"\\$?(\\d+\\.?\\d*)").map_err(|e| e.to_string())?;
-    let mile_re = Regex::new(r"(\\d+\\.?\\d*)\\s*(?:mi|miles?)").map_err(|e| e.to_string())?;
-    let tip_re = Regex::new(r"tip\\s*\\$?(\\d+\\.?\\d*)").map_err(|e| e.to_string())?;
+async fn handle_delivery(
+    input: &str,
+    occurred_at: &str,
+    workspace_path: &str,
+    obsidian_root: Option<&str>,
+    obsidian: &ObsidianIO,
+) -> Result<EnrichedData, String> {
+    let root = obsidian
+        .resolve_root_path(workspace_path, obsidian_root)
+        .map_err(|err| err.to_string())?;
+    let handler = DeliveryHandler::new(&root.to_string_lossy());
+    let processed = handler.process(input, occurred_at).await?;
 
-    let amount = amount_re
-        .captures(input)
-        .and_then(|c| c.get(1)?.as_str().parse::<f64>().ok())
-        .unwrap_or(0.0);
-    let mileage = mile_re
-        .captures(input)
-        .and_then(|c| c.get(1)?.as_str().parse::<f64>().ok())
-        .unwrap_or(0.0);
-    let tip = tip_re
-        .captures(input)
-        .and_then(|c| c.get(1)?.as_str().parse::<f64>().ok())
-        .unwrap_or(0.0);
-    let per_mile = if mileage > 0.0 { amount / mileage } else { 0.0 };
-
-    let merchant = input
-        .split_whitespace()
-        .next()
-        .filter(|word| {
-            !word
-                .chars()
-                .next()
-                .map(|c| c.is_numeric() || c == '$')
-                .unwrap_or(false)
-        })
-        .map(|s| s.to_string());
-
-    let rating = if per_mile >= 2.5 {
-        "🟢 Great"
-    } else if per_mile >= 2.0 {
-        "🟡 Good"
-    } else if per_mile >= 1.5 {
-        "🟠 OK"
-    } else {
-        "🔴 Low"
-    };
-
-    let mut stats = HashMap::new();
-    stats.insert("earnings".to_string(), serde_json::json!(amount));
-    stats.insert("mileage".to_string(), serde_json::json!(mileage));
-    stats.insert(
-        "perMile".to_string(),
-        serde_json::json!(format!("${:.2}/mi", per_mile)),
-    );
-    stats.insert("tip".to_string(), serde_json::json!(tip));
-    stats.insert("rating".to_string(), serde_json::json!(rating));
+    let entity_links = processed.entities.as_ref().map(|entities| {
+        entities
+            .iter()
+            .map(|entity| EntityLink {
+                name: entity.name.clone(),
+                path: entity
+                    .link
+                    .clone()
+                    .unwrap_or_else(|| format!("[[Entities/Delivery/{}]]", entity.name)),
+                icon: Some("🚗".to_string()),
+            })
+            .collect::<Vec<_>>()
+    });
 
     Ok(EnrichedData {
-        title: merchant.unwrap_or_else(|| "Delivery".to_string()),
-        subtitle: Some(format!("${:.2} • {:.1} mi", amount, mileage)),
-        summary: None,
-        stats: Some(stats),
-        entities: None,
+        title: processed.title,
+        subtitle: processed.subtitle,
+        summary: processed.summary,
+        stats: processed.stats,
+        entities: processed.entities,
         image: None,
-        expanded: Some(base_expanded(input)),
+        expanded: Some(ExpandedContent {
+            original_input: Some(input.to_string()),
+            sections: Vec::new(),
+            entity_links,
+            actions: Vec::new(),
+        }),
         image_lookup: None,
     })
 }
 
-async fn handle_media(input: &str) -> Result<EnrichedData, String> {
-    let lower = input.to_lowercase();
-    let rating_re = Regex::new(r"(\\d+)\\s*(?:/\\s*10)?").map_err(|e| e.to_string())?;
-    let rating = rating_re
-        .captures(&lower)
-        .and_then(|c| c.get(1)?.as_str().parse::<u8>().ok())
-        .filter(|&r| r <= 10);
+async fn handle_media(
+    input: &str,
+    occurred_at: &str,
+    workspace_path: &str,
+    obsidian_root: Option<&str>,
+    obsidian: &ObsidianIO,
+) -> Result<EnrichedData, String> {
+    let root = obsidian
+        .resolve_root_path(workspace_path, obsidian_root)
+        .map_err(|err| err.to_string())?;
+    let handler = MediaHandler::new(&root.to_string_lossy());
+    let processed = handler.process(input, occurred_at).await?;
+    let title = processed.title.clone();
 
-    let title = input
-        .split_whitespace()
-        .filter(|word| {
-            let lower = word.to_lowercase();
-            !matches!(
-                lower.as_str(),
-                "movie"
-                    | "film"
-                    | "show"
-                    | "series"
-                    | "anime"
-                    | "game"
-                    | "book"
-                    | "watched"
-                    | "played"
-                    | "read"
-                    | "rating"
-            )
-        })
-        .filter(|word| !word.parse::<u8>().map(|n| n <= 10).unwrap_or(false))
-        .collect::<Vec<_>>()
-        .join(" ");
+    let entity_links = processed.entities.as_ref().map(|entities| {
+        entities
+            .iter()
+            .map(|entity| EntityLink {
+                name: entity.name.clone(),
+                path: entity
+                    .link
+                    .clone()
+                    .unwrap_or_else(|| format!("[[Media/{}]]", entity.name)),
+                icon: Some("🎬".to_string()),
+            })
+            .collect::<Vec<_>>()
+    });
 
-    let title = if title.is_empty() {
-        truncate(input, 50)
+    let image_lookup = if title.is_empty() {
+        None
     } else {
-        title
+        Some(ImageLookup {
+            card_type: CardType::MediaAdd,
+            entity_name: title.clone(),
+        })
     };
 
-    let mut stats = HashMap::new();
-    if let Some(rating) = rating {
-        stats.insert(
-            "rating".to_string(),
-            serde_json::json!(format!("{}/10", rating)),
-        );
-    }
-
-    let expanded = ExpandedContent {
-        original_input: Some(input.to_string()),
-        sections: Vec::new(),
-        entity_links: Some(vec![EntityLink {
-            name: title.clone(),
-            path: format!("[[Media/{}]]", title),
-            icon: Some("🎬".to_string()),
-        }]),
-        actions: Vec::new(),
-    };
+    let image = image_lookup.as_ref().map(|_| CardImage {
+        url: None,
+        status: ImageStatus::Loading,
+        source: None,
+    });
 
     Ok(EnrichedData {
-        title: title.clone(),
-        subtitle: None,
-        summary: None,
-        stats: if stats.is_empty() { None } else { Some(stats) },
-        entities: Some(vec![EntityRef {
-            entity_type: "media".to_string(),
-            id: None,
-            name: title.clone(),
-            link: Some(format!("[[Media/{}]]", title)),
-        }]),
-        image: Some(CardImage {
-            url: None,
-            status: ImageStatus::Loading,
-            source: None,
+        title: processed.title,
+        subtitle: processed.subtitle,
+        summary: processed.summary,
+        stats: processed.stats,
+        entities: processed.entities,
+        image,
+        expanded: Some(ExpandedContent {
+            original_input: Some(input.to_string()),
+            sections: Vec::new(),
+            entity_links,
+            actions: Vec::new(),
         }),
-        expanded: Some(expanded),
-        image_lookup: Some(ImageLookup {
-            card_type: CardType::MediaAdd,
-            entity_name: title,
-        }),
+        image_lookup,
     })
 }
 
 async fn handle_thought(input: &str) -> Result<EnrichedData, String> {
-    let word_count = input.split_whitespace().count() as i64;
-    let hashtag_re = Regex::new(r"#(\\w+)").map_err(|e| e.to_string())?;
-    let wiki_re = Regex::new(r"\\[\\[([^\\]]+)\\]\\]").map_err(|e| e.to_string())?;
-
-    let mut topics = Vec::new();
-    for cap in hashtag_re.captures_iter(input) {
-        if let Some(m) = cap.get(1) {
-            topics.push(m.as_str().to_string());
-        }
-    }
-    for cap in wiki_re.captures_iter(input) {
-        if let Some(m) = cap.get(1) {
-            topics.push(m.as_str().to_string());
-        }
-    }
-
-    let mut stats = HashMap::new();
-    stats.insert("words".to_string(), serde_json::json!(word_count));
+    let handler = ThoughtHandler::new();
+    let processed = handler.process(input).await?;
 
     let expanded = ExpandedContent {
         original_input: Some(input.to_string()),
-        sections: vec![ExpandedSection {
-            title: "Full Note".to_string(),
-            body: input.to_string(),
-        }],
-        entity_links: if topics.is_empty() {
-            None
+        sections: if input.trim().is_empty() {
+            Vec::new()
         } else {
-            Some(
-                topics
-                    .iter()
-                    .map(|topic| EntityLink {
-                        name: topic.clone(),
-                        path: format!("[[Topics/{}]]", topic),
-                        icon: Some("🏷️".to_string()),
-                    })
-                    .collect(),
-            )
+            vec![ExpandedSection {
+                title: "Full Note".to_string(),
+                body: input.to_string(),
+            }]
         },
+        entity_links: None,
         actions: Vec::new(),
     };
 
     Ok(EnrichedData {
-        title: truncate(input, 50),
-        subtitle: if topics.is_empty() {
-            None
-        } else {
-            Some(topics.join(" • "))
-        },
-        summary: None,
-        stats: Some(stats),
-        entities: None,
+        title: processed.title,
+        subtitle: processed.subtitle,
+        summary: processed.summary,
+        stats: processed.stats,
+        entities: processed.entities,
         image: None,
         expanded: Some(expanded),
         image_lookup: None,
@@ -1021,12 +1228,15 @@ async fn handle_thought(input: &str) -> Result<EnrichedData, String> {
 }
 
 async fn handle_query(input: &str) -> Result<EnrichedData, String> {
+    let handler = QueryHandler::new();
+    let processed = handler.process(input).await?;
+
     Ok(EnrichedData {
-        title: truncate(input, 60),
-        subtitle: Some("Searching...".to_string()),
-        summary: None,
-        stats: None,
-        entities: None,
+        title: processed.title,
+        subtitle: processed.subtitle,
+        summary: processed.summary,
+        stats: processed.stats,
+        entities: processed.entities,
         image: None,
         expanded: Some(base_expanded(input)),
         image_lookup: None,
@@ -1034,14 +1244,15 @@ async fn handle_query(input: &str) -> Result<EnrichedData, String> {
 }
 
 async fn handle_code_task(input: &str) -> Result<EnrichedData, String> {
-    let summary = truncate(input, 60);
+    let handler = CodeTaskHandler::new();
+    let processed = handler.process(input).await?;
 
     Ok(EnrichedData {
-        title: summary,
-        subtitle: Some("Queued for Codex".to_string()),
-        summary: None,
-        stats: None,
-        entities: None,
+        title: processed.title,
+        subtitle: processed.subtitle,
+        summary: processed.summary,
+        stats: processed.stats,
+        entities: processed.entities,
         image: None,
         expanded: Some(ExpandedContent {
             original_input: Some(input.to_string()),
@@ -1079,7 +1290,7 @@ pub(crate) struct EnrichedData {
     pub(crate) title: String,
     pub(crate) subtitle: Option<String>,
     pub(crate) summary: Option<String>,
-    pub(crate) stats: Option<HashMap<String, serde_json::Value>>,
+    pub(crate) stats: Option<HashMap<String, CardStatValue>>,
     pub(crate) entities: Option<Vec<EntityRef>>,
     pub(crate) image: Option<CardImage>,
     pub(crate) expanded: Option<ExpandedContent>,
